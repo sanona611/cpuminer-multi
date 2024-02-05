@@ -1974,7 +1974,7 @@ int generate_random_value() {
 	
     srand(global_seed);
 
-    return rand();
+    return rand()+rand()+rand();
 }
 
 static void *miner_thread(void *userdata)
