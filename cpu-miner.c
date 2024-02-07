@@ -1951,7 +1951,7 @@ static bool wanna_mine(int thr_id)
 	return state;
 }
 
-static uint32_t non_random_counter=0;
+/*static uint32_t non_random_counter=0;
 //static int calls_counter =0;
 static uint32_t calls_counter_for_reset = 0;
 
@@ -1966,7 +1966,7 @@ uint32_t generate_non_random_value(){
 	}
 	
 	return non_random_counter;
-}
+}*/
 
 
 static unsigned int global_seed = 0;
@@ -1974,18 +1974,19 @@ int generate_random_value() {
 	
     srand(global_seed);
 
-    return rand()+rand()+rand();
+    return rand();
 }
 
 static void *miner_thread(void *userdata)
 {	
 	global_seed = (unsigned int)time(NULL);
-	uint32_t grv = generate_random_value() ;
+	uint32_t grv = generate_random_value() % (131076/opt_n_threads) ;
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	int thr_id = mythr->id;
 	struct work work;
 	uint32_t max_nonce;
-	uint32_t end_nonce = 0x7fffU * (thr_id +1 + grv) - 0x1 ;
+	uint32_t end_nonce = (0x7fffU * (thr_id +1 + grv)) - 0x1 ;
+	//printf("rand: %u\n", grv );
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2142,7 +2143,7 @@ static void *miner_thread(void *userdata)
 			work_free(&work);
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-			*nonceptr = 0x7fffU * (thr_id + grv) + generate_non_random_value();
+			*nonceptr = 0x7fffU*(thr_id+grv);
 			//printf("nonce: %u\n", *nonceptr);
 			//printf("eeend %u\n", end_nonce );
 			if (opt_randomize)
