@@ -1976,6 +1976,14 @@ int generate_random_value() {
 
     return rand();
 }*/
+uint32_t generate_random_number(){
+	struct timespec nano_time;
+	clock_gettime(CLOCK_REALTIME, &nano_time);
+	srand((unsigned int)(nano_time.tv_sec * 1e9 + nano_time.tv_nsec));
+	//int random_number = rand();
+	//printf("nonce: %d\n", random_number );
+	return rand();
+}
 
 static void *miner_thread(void *userdata)
 {	
@@ -1984,7 +1992,6 @@ static void *miner_thread(void *userdata)
 	struct work work;
 	uint32_t max_nonce;
 	uint32_t end_nonce = 0xffffffffU  ;
-	//printf("rand: %u\n", grv );
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2148,7 +2155,7 @@ static void *miner_thread(void *userdata)
 			if (opt_randomize)
 				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
 		} else
-			*nonceptr += rand();
+			*nonceptr += generate_random_number();
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
 
