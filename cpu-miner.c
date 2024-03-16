@@ -2154,9 +2154,9 @@ static void *miner_thread(void *userdata)
 			//printf("nonce: %u\n", *nonceptr);
 			
 			if (opt_randomize)
-				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
+				nonceptr[0] += generate_random_number();
 		} else
-			*nonceptr += generate_random_number();
+			++(*nonceptr) ;
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
 
