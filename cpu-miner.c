@@ -2149,7 +2149,7 @@ static void *miner_thread(void *userdata)
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
 			srand(getpid()+thr_id);
-			*nonceptr =  65535 * (rand()+(65535/opt_n_threads)*thr_id) ;
+			*nonceptr =  65535 * rand();
 			//end_nonce = *nonceptr + 32767;
 			//printf("nonce: %u\n", *nonceptr);
 			
