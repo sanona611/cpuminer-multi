@@ -56,7 +56,7 @@ BOOL WINAPI ConsoleHandler(DWORD);
 #pragma comment(lib, "winmm.lib")
 #endif
 
-#define LP_SCANTIME		60
+#define LP_SCANTIME		1
 
 #ifndef min
 #define min(a,b) (a>b ? b : a)
@@ -1983,14 +1983,14 @@ int generate_random_value() {
 	//int random_number = rand();
 	//printf("nonce: %d\n", random_number );
 	return rand();
-}*/
-uint32_t delta() {
-srand(time(0));
-unsigned int result = 0;
-     for (unsigned int i=0 ; i<3; ++i) 
-          result = ((result << 1) | (rand() & 1));
-return result+1;
 }
+uint32_t rand32() {
+//srand(time(0));
+unsigned int result = 0;
+     for (unsigned int i=0 ; i<32; ++i) 
+          result = ((result << 1) | (rand() & 1));
+return result;
+}*/
 
 static void *miner_thread(void *userdata)
 {	
@@ -1998,7 +1998,7 @@ static void *miner_thread(void *userdata)
 	int thr_id = mythr->id;
 	struct work work;
 	uint32_t max_nonce;
-	uint32_t end_nonce = 0x10000U * (thr_id+353) - 0x1;
+	uint32_t end_nonce = ( 0xffffffffU / opt_n_threads ) * (thr_id+1) - 0x20;
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2159,13 +2159,14 @@ static void *miner_thread(void *userdata)
 			unsigned int result = 0;
     		 for (int i=0 ; i<32; ++i) 
         		result = (result << 1) | (rand() & 1);*/
-			*nonceptr = 0x10000U * (thr_id+352) ;
+			*nonceptr = 0xffffffffU / opt_n_threads  * thr_id ;
 			//end_nonce = *nonceptr + 32767;
 			//printf("nonce: %u\n", *nonceptr);
-			if (opt_randomize)
-				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
+			if (opt_randomize){
+				srand(time(0));
+				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;}
 		} else
-			*nonceptr += delta() ;
+			++(*nonceptr) ;
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
 
