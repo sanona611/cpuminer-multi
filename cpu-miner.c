@@ -3,7 +3,7 @@
  * Copyright 2012-2014 pooler
  * Copyright 2014 Lucas Jones
  * Copyright 2014 Tanguy Pruvot
- * Copyright 2023 sanona
+ *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option)
@@ -56,7 +56,7 @@ BOOL WINAPI ConsoleHandler(DWORD);
 #pragma comment(lib, "winmm.lib")
 #endif
 
-#define LP_SCANTIME		1
+#define LP_SCANTIME		60
 
 #ifndef min
 #define min(a,b) (a>b ? b : a)
@@ -186,10 +186,10 @@ bool opt_protocol = false;
 bool opt_benchmark = false;
 bool opt_redirect = true;
 bool opt_showdiff = true;
-bool opt_extranonce = false;
+bool opt_extranonce = true;
 bool want_longpoll = true;
 bool have_longpoll = false;
-bool have_gbt = false;
+bool have_gbt = true;
 bool allow_getwork = true;
 bool want_stratum = true;
 bool have_stratum = false;
@@ -204,7 +204,7 @@ bool opt_randomize = false;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
-int opt_timeout = 600;
+int opt_timeout = 300;
 static int opt_scantime = 5;
 static const bool opt_time = true;
 static enum algos opt_algo = ALGO_SCRYPT;
@@ -240,7 +240,7 @@ size_t rpc2_bloblen = 0;
 uint32_t rpc2_target = 0;
 char *rpc2_job_id = NULL;
 bool aes_ni_supported = false;
-double opt_diff_factor = 10000;
+double opt_diff_factor = 1.0;
 pthread_mutex_t rpc2_job_lock;
 pthread_mutex_t rpc2_login_lock;
 pthread_mutex_t applog_lock;
@@ -1858,21 +1858,13 @@ static bool wanna_mine(int thr_id)
 	return state;
 }
 
-uint32_t rand32() {
-srand(GetTickCount());
-unsigned int result = 0;
-     for (unsigned int i=0 ; i<32; ++i) 
-          result = ((result << 1) | (rand() & 1));
-return result;
-}
-
 static void *miner_thread(void *userdata)
 {
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	int thr_id = mythr->id;
 	struct work work;
 	uint32_t max_nonce;
-	uint32_t end_nonce = 0xffffffffU;
+	uint32_t end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2029,19 +2021,11 @@ static void *miner_thread(void *userdata)
 			work_free(&work);
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-			unsigned int result = 0;
-    			for (unsigned int i=0 ; i<32+thr_id; ++i) 
-          		result = ((result << 1) | (rand() & 1));
-			srand(result);
-			*nonceptr = 32768 * rand();
-			end_nonce = *nonceptr + 32767;
-
+			*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
 			if (opt_randomize)
-	
-				nonceptr[0] += ((rand()) & UINT32_MAX);
+				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
 		} else
 			++(*nonceptr);
-				//printf("nonce: %u\n", *nonceptr);
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
 
@@ -2104,9 +2088,7 @@ static void *miner_thread(void *userdata)
 			if (remain < max64) max64 = remain;
 		}
 
-		max64 = (int64_t) thr_hashrates[thr_id] ;
-		//srand(GetTickCount());
-		//max64 += rand()% 10245;
+		max64 *= (int64_t) thr_hashrates[thr_id];
 
 		if (max64 <= 0) {
 			switch (opt_algo) {
@@ -2170,16 +2152,14 @@ static void *miner_thread(void *userdata)
 				break;
 			case ALGO_SIA:
 			default:
-				//srand(GetTickCount());
-				max64 = (int64_t) thr_hashrates[thr_id];
+				max64 = 0x1fffffLL;
 				break;
 			}
 		}
 		if ((*nonceptr) + max64 > end_nonce)
 			max_nonce = end_nonce;
 		else
-			//max_nonce = (*nonceptr) + (uint32_t) max64;
-			max_nonce = (*nonceptr) + 32767;
+			max_nonce = (*nonceptr) + (uint32_t) max64;
 
 		hashes_done = 0;
 		gettimeofday((struct timeval *) &tv_start, NULL);
@@ -2683,13 +2663,13 @@ static void *stratum_thread(void *userdata)
 		}
 
 		if (!stratum_socket_full(&stratum, opt_timeout)) {
-			//applog(LOG_ERR, "Stratum connection timeout");
+			applog(LOG_ERR, "Stratum connection timeout");
 			s = NULL;
 		} else
 			s = stratum_recv_line(&stratum);
 		if (!s) {
 			stratum_disconnect(&stratum);
-			//applog(LOG_ERR, "Stratum connection interrupted");
+			applog(LOG_ERR, "Stratum connection interrupted");
 			continue;
 		}
 		if (!stratum_handle_method(&stratum, s))
