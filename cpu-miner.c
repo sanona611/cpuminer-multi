@@ -3,7 +3,7 @@
  * Copyright 2012-2014 pooler
  * Copyright 2014 Lucas Jones
  * Copyright 2014 Tanguy Pruvot
- * Copyright 2024 sanona
+ * Copyright 2023 sanona
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option)
@@ -77,17 +77,14 @@ struct workio_cmd {
 };
 
 enum algos {
-	ALGO_KECCAK,      /* Keccak (old) */
-	ALGO_KECCAKC,     /* Keccak */
+	ALGO_KECCAK,      /* Keccak */
 	ALGO_HEAVY,       /* Heavy */
 	ALGO_NEOSCRYPT,   /* NeoScrypt(128, 2, 1) with Salsa20/20 and ChaCha20/20 */
 	ALGO_QUARK,       /* Quark */
-	ALGO_ALLIUM,      /* Garlicoin double lyra2 */
 	ALGO_AXIOM,       /* Shabal 256 Memohash */
 	ALGO_BASTION,
 	ALGO_BLAKE,       /* Blake 256 */
 	ALGO_BLAKECOIN,   /* Simplified 8 rounds Blake 256 */
-	ALGO_BLAKE2B,
 	ALGO_BLAKE2S,     /* Blake2s */
 	ALGO_BMW,         /* BMW 256 */
 	ALGO_C11,         /* C11 Chaincoin/Flaxcoin X11 variant */
@@ -97,22 +94,16 @@ enum algos {
 	ALGO_DMD_GR,      /* Diamond */
 	ALGO_DROP,        /* Dropcoin */
 	ALGO_FRESH,       /* Fresh */
-	ALGO_GEEK,
 	ALGO_GROESTL,     /* Groestl */
-	ALGO_JHA,
 	ALGO_LBRY,        /* Lbry Sha Ripemd */
 	ALGO_LUFFA,       /* Luffa (Joincoin, Doom) */
 	ALGO_LYRA2,       /* Lyra2RE */
-	ALGO_LYRA2REV2,   /* Lyra2REv2 */
-	ALGO_LYRA2V3,     /* Lyra2REv3 (Vertcoin) */
+	ALGO_LYRA2REV2,   /* Lyra2REv2 (Vertcoin) */
 	ALGO_MYR_GR,      /* Myriad Groestl */
 	ALGO_NIST5,       /* Nist5 */
 	ALGO_PENTABLAKE,  /* Pentablake */
-	ALGO_PHI1612,
-	ALGO_PHI2,
 	ALGO_PLUCK,       /* Pluck (Supcoin) */
 	ALGO_QUBIT,       /* Qubit */
-	ALGO_RAINFOREST,  /* RainForest */
 	ALGO_SCRYPT,      /* scrypt */
 	ALGO_SCRYPTJANE,  /* Chacha */
 	ALGO_SHAVITE3,    /* Shavite3 */
@@ -121,45 +112,31 @@ enum algos {
 	ALGO_SIB,         /* X11 + gost (Sibcoin) */
 	ALGO_SKEIN,       /* Skein */
 	ALGO_SKEIN2,      /* Double skein (Woodcoin) */
-	ALGO_SONOA,
 	ALGO_S3,          /* S3 */
-	ALGO_TIMETRAVEL,  /* Timetravel-8 (Machinecoin) */
-	ALGO_BITCORE,     /* Timetravel-10 (Bitcore) */
-	ALGO_TRIBUS,      /* Denarius jh/keccak/echo */
+	ALGO_TIMETRAVEL,  /* Timetravel (Machinecoin) */
 	ALGO_VANILLA,     /* Vanilla (Blake256 8-rounds - double sha256) */
 	ALGO_VELTOR,      /* Skein Shavite Shabal Streebog */
 	ALGO_X11EVO,      /* Permuted X11 */
 	ALGO_X11,         /* X11 */
-	ALGO_X12,
 	ALGO_X13,         /* X13 */
 	ALGO_X14,         /* X14 */
 	ALGO_X15,         /* X15 */
-	ALGO_X16R,        /* X16R */
-	ALGO_X16RV2,      /* X16Rv2 */
-	ALGO_X16S,
 	ALGO_X17,         /* X17 */
-	ALGO_X20R,
 	ALGO_XEVAN,
 	ALGO_YESCRYPT,
-	ALGO_YESCRYPTR8,
-	ALGO_YESCRYPTR16,
-	ALGO_YESCRYPTR32,
 	ALGO_ZR5,
 	ALGO_COUNT
 };
 
 static const char *algo_names[] = {
 	"keccak",
-	"keccakc",
 	"heavy",
 	"neoscrypt",
 	"quark",
-	"allium",
 	"axiom",
 	"bastion",
 	"blake",
 	"blakecoin",
-	"blake2b",
 	"blake2s",
 	"bmw",
 	"c11",
@@ -169,22 +146,16 @@ static const char *algo_names[] = {
 	"dmd-gr",
 	"drop",
 	"fresh",
-	"geek",
 	"groestl",
-	"jha",
 	"lbry",
 	"luffa",
 	"lyra2re",
 	"lyra2rev2",
-	"lyra2v3",
 	"myr-gr",
 	"nist5",
 	"pentablake",
-	"phi1612",
-	"phi2",
 	"pluck",
 	"qubit",
-	"rainforest",
 	"scrypt",
 	"scrypt-jane",
 	"shavite3",
@@ -193,29 +164,18 @@ static const char *algo_names[] = {
 	"sib",
 	"skein",
 	"skein2",
-	"sonoa",
 	"s3",
 	"timetravel",
-	"bitcore",
-	"tribus",
 	"vanilla",
 	"veltor",
 	"x11evo",
 	"x11",
-	"x12",
 	"x13",
 	"x14",
 	"x15",
-	"x16r",
-	"x16rv2",
-	"x16s",
 	"x17",
-	"x20r",
 	"xevan",
 	"yescrypt",
-	"yescryptr8",
-	"yescryptr16",
-	"yescryptr32",
 	"zr5",
 	"\0"
 };
@@ -226,10 +186,10 @@ bool opt_protocol = false;
 bool opt_benchmark = false;
 bool opt_redirect = true;
 bool opt_showdiff = true;
-bool opt_extranonce = true;
+bool opt_extranonce = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
-bool have_gbt = true;
+bool have_gbt = false;
 bool allow_getwork = true;
 bool want_stratum = true;
 bool have_stratum = false;
@@ -244,8 +204,9 @@ bool opt_randomize = false;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
-int opt_timeout = 300;
+int opt_timeout = 600;
 static int opt_scantime = 5;
+static const bool opt_time = true;
 static enum algos opt_algo = ALGO_SCRYPT;
 static int opt_scrypt_n = 1024;
 static int opt_pluck_n = 128;
@@ -279,13 +240,13 @@ size_t rpc2_bloblen = 0;
 uint32_t rpc2_target = 0;
 char *rpc2_job_id = NULL;
 bool aes_ni_supported = false;
-double opt_diff_factor = 1.0;
+double opt_diff_factor = 10000;
 pthread_mutex_t rpc2_job_lock;
 pthread_mutex_t rpc2_login_lock;
 pthread_mutex_t applog_lock;
 pthread_mutex_t stats_lock;
 uint32_t zr5_pok = 0;
-bool use_roots = false;
+
 uint32_t solved_count = 0L;
 uint32_t accepted_count = 0L;
 uint32_t rejected_count = 0L;
@@ -321,12 +282,9 @@ static char const usage[] = "\
 Usage: " PACKAGE_NAME " [OPTIONS]\n\
 Options:\n\
   -a, --algo=ALGO       specify the algorithm to use\n\
-                          allium       Garlicoin double lyra2\n\
                           axiom        Shabal-256 MemoHash\n\
-                          bitcore      Timetravel with 10 algos\n\
                           blake        Blake-256 14-rounds (SFR)\n\
                           blakecoin    Blake-256 single sha256 merkle\n\
-                          blake2b      Blake2-B (512)\n\
                           blake2s      Blake2-S (256)\n\
                           bmw          BMW 256\n\
                           c11/flax     C11\n\
@@ -336,26 +294,19 @@ Options:\n\
                           dmd-gr       Diamond-Groestl\n\
                           drop         Dropcoin\n\
                           fresh        Fresh\n\
-                          geek         GeekCash\n\
                           groestl      GroestlCoin\n\
                           heavy        Heavy\n\
-                          jha          JHA\n\
-                          keccak       Keccak (Old and deprecated)\n\
-                          keccakc      Keccak (CreativeCoin)\n\
+                          keccak       Keccak\n\
                           luffa        Luffa\n\
                           lyra2re      Lyra2RE\n\
-                          lyra2rev2    Lyra2REv2\n\
-                          lyra2v3      Lyra2REv3 (Vertcoin)\n\
+                          lyra2rev2    Lyra2REv2 (Vertcoin)\n\
                           myr-gr       Myriad-Groestl\n\
                           neoscrypt    NeoScrypt(128, 2, 1)\n\
                           nist5        Nist5\n\
                           pluck        Pluck:128 (Supcoin)\n\
                           pentablake   Pentablake\n\
-                          phi          LUX initial algo\n\
-                          phi2         LUX newer algo\n\
                           quark        Quark\n\
                           qubit        Qubit\n\
-                          rainforest   RainForest (256)\n\
                           scrypt       scrypt(1024, 1, 1) (default)\n\
                           scrypt:N     scrypt(N, 1, 1)\n\
                           scrypt-jane:N (with N factor from 4 to 30)\n\
@@ -365,26 +316,17 @@ Options:\n\
                           sib          X11 + gost (SibCoin)\n\
                           skein        Skein+Sha (Skeincoin)\n\
                           skein2       Double Skein (Woodcoin)\n\
-                          sonoa        A series of 97 hashes from x17\n\
                           s3           S3\n\
                           timetravel   Timetravel (Machinecoin)\n\
                           vanilla      Blake-256 8-rounds\n\
                           x11evo       Permuted x11\n\
                           x11          X11\n\
-                          x12          X12\n\
                           x13          X13\n\
                           x14          X14\n\
                           x15          X15\n\
-                          x16r         X16R\n\
-                          x16rv2       X16Rv2 (Raven / Trivechain)\n\
-                          x16s         X16S (Pigeon)\n\
                           x17          X17\n\
-                          x20r         X20R\n\
                           xevan        Xevan (BitSend)\n\
                           yescrypt     Yescrypt\n\
-                          yescryptr8   Yescrypt r8\n\
-                          yescryptr16  Yescrypt r16\n\
-                          yescryptr32  Yescrypt r32\n\
                           zr5          ZR5\n\
   -o, --url=URL         URL of mining server\n\
   -O, --userpass=U:P    username:password pair for mining server\n\
@@ -636,9 +578,6 @@ static bool work_decode(const json_t *val, struct work *work)
 		allow_mininginfo = false;
 		data_size = 192;
 		adata_sz = 180/4;
-	} else if (use_roots) {
-		data_size = 144;
-		adata_sz = 36;
 	}
 
 	if (jsonrpc_2) {
@@ -690,11 +629,6 @@ static bool work_decode(const json_t *val, struct work *work)
 			applog(LOG_BLUE, "%s block %d%s",
 				algo_names[opt_algo], work->height, netinfo);
 			net_blocks = work->height - 1;
-		}
-	} else if (opt_algo == ALGO_PHI2) {
-		if (work->data[0] & (1<<30)) use_roots = true;
-		else for (i = 20; i < 36; i++) {
-			if (work->data[i]) { use_roots = true; break; }
 		}
 	}
 
@@ -904,11 +838,6 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		/* BIP 34: height in coinbase */
 		for (n = work->height; n; n >>= 8)
 			cbtx[cbtx_size++] = n & 0xff;
-                /* If the last byte pushed is >= 0x80, then we need to add
-                   another zero byte to signal that the block height is a
-                   positive number.  */
-                if (cbtx[cbtx_size - 1] & 0x80)
-                        cbtx[cbtx_size++] = 0;
 		cbtx[42] = cbtx_size - 43;
 		cbtx[41] = cbtx_size - 42; /* scriptsig length */
 		le32enc((uint32_t *)(cbtx+cbtx_size), 0xffffffff); /* sequence */
@@ -1155,10 +1084,10 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			bin2hex(noncestr, (const unsigned char *)work->data + 39, 4);
 			switch(opt_algo) {
 			case ALGO_CRYPTOLIGHT:
-				cryptolight_hash(hash, work->data);
+				cryptolight_hash(hash, work->data, 76);
 				break;
 			case ALGO_CRYPTONIGHT:
-				cryptonight_hash(hash, work->data);
+				cryptonight_hash(hash, work->data, 76);
 			default:
 				break;
 			}
@@ -1289,10 +1218,10 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 			switch(opt_algo) {
 			case ALGO_CRYPTOLIGHT:
-				cryptolight_hash(hash, work->data);
+				cryptolight_hash(hash, work->data, 76);
 				break;
 			case ALGO_CRYPTONIGHT:
-				cryptonight_hash(hash, work->data);
+				cryptonight_hash(hash, work->data, 76);
 			default:
 				break;
 			}
@@ -1335,10 +1264,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		} else if (opt_algo == ALGO_DECRED) {
 			/* bigger data size : 180 + terminal hash ending */
 			data_size = 192;
-		} else if (opt_algo == ALGO_PHI2 && use_roots) {
-			data_size = 144;
 		}
-
 		adata_sz = data_size / sizeof(uint32_t);
 		if (opt_algo == ALGO_DECRED) adata_sz = 180 / 4; // dont touch the end tag
 
@@ -1807,16 +1733,10 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 			//applog_hex(&work->data[36], 36);
 		} else if (opt_algo == ALGO_LBRY) {
 			for (i = 0; i < 8; i++)
-				work->data[17 + i] = ((uint32_t*)sctx->job.extra)[i];
+				work->data[17 + i] = ((uint32_t*)sctx->job.claim)[i];
 			work->data[25] = le32dec(sctx->job.ntime);
 			work->data[26] = le32dec(sctx->job.nbits);
 			work->data[28] = 0x80000000;
-		} else if (opt_algo == ALGO_PHI2) {
-			work->data[17] = le32dec(sctx->job.ntime);
-			work->data[18] = le32dec(sctx->job.nbits);
-			for (i = 0; i < 16; i++)
-				work->data[20 + i] = ((uint32_t*)sctx->job.extra)[i];
-			//applog_hex(&work->data[0], 144);
 		} else if (opt_algo == ALGO_SIA) {
 			for (i = 0; i < 8; i++) // prevhash
 				work->data[i] = ((uint32_t*)sctx->job.prevhash)[7-i];
@@ -1856,33 +1776,20 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 
 		switch (opt_algo) {
 			case ALGO_DROP:
-			case ALGO_JHA:
 			case ALGO_SCRYPT:
 			case ALGO_SCRYPTJANE:
 			case ALGO_NEOSCRYPT:
 			case ALGO_PLUCK:
 			case ALGO_YESCRYPT:
-			case ALGO_YESCRYPTR8:
-			case ALGO_YESCRYPTR16:
-			case ALGO_YESCRYPTR32:
 				work_set_target(work, sctx->job.diff / (65536.0 * opt_diff_factor));
 				break;
-			case ALGO_ALLIUM:
 			case ALGO_FRESH:
 			case ALGO_DMD_GR:
 			case ALGO_GROESTL:
-			case ALGO_KECCAKC:
 			case ALGO_LBRY:
 			case ALGO_LYRA2REV2:
-			case ALGO_LYRA2V3:
-			case ALGO_PHI2:
 			case ALGO_TIMETRAVEL:
-			case ALGO_BITCORE:
 			case ALGO_XEVAN:
-			case ALGO_X16R:
-			case ALGO_X16RV2:
-			case ALGO_X16S:
-			case ALGO_X20R:
 				work_set_target(work, sctx->job.diff / (256.0 * opt_diff_factor));
 				break;
 			case ALGO_KECCAK:
@@ -1951,54 +1858,21 @@ static bool wanna_mine(int thr_id)
 	return state;
 }
 
-/*static uint32_t non_random_counter=0;
-//static int calls_counter =0;
-static uint32_t calls_counter_for_reset = 0;
-
-uint32_t generate_non_random_value(){
-	//non_random_counter = (non_random_counter + 1)%4294967295;
-	//calls_counter++;
-	calls_counter_for_reset++;
-	if(calls_counter_for_reset%opt_n_threads== 0){
-		non_random_counter = (non_random_counter + 1)%32767;
-		//non_random_counter++;
-		calls_counter_for_reset = 0;
-	}
-	
-	return non_random_counter;
-}*/
-
-
-/*static unsigned int global_seed = 0;
-int generate_random_value() {
-	
-    srand(global_seed);
-
-    return rand();
-}*/
-/*uint32_t generate_random_number(){
-	struct timespec nano_time;
-	clock_gettime(CLOCK_REALTIME, &nano_time);
-	srand((unsigned int)(nano_time.tv_sec * 1e9 + nano_time.tv_nsec));
-	//int random_number = rand();
-	//printf("nonce: %d\n", random_number );
-	return rand();
-}
 uint32_t rand32() {
-//srand(time(0));
+srand(GetTickCount());
 unsigned int result = 0;
      for (unsigned int i=0 ; i<32; ++i) 
           result = ((result << 1) | (rand() & 1));
 return result;
-}*/
+}
 
 static void *miner_thread(void *userdata)
-{	
+{
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	int thr_id = mythr->id;
 	struct work work;
 	uint32_t max_nonce;
-	uint32_t end_nonce = ( 0xffffffffU / opt_n_threads ) * (thr_id+1) - 0x20;
+	uint32_t end_nonce = 0xffffffffU;
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2155,18 +2029,19 @@ static void *miner_thread(void *userdata)
 			work_free(&work);
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-			/*srand(getpid());
 			unsigned int result = 0;
-    		 for (int i=0 ; i<32; ++i) 
-        		result = (result << 1) | (rand() & 1);*/
-			*nonceptr = 0xffffffffU / opt_n_threads  * thr_id ;
-			//end_nonce = *nonceptr + 32767;
-			//printf("nonce: %u\n", *nonceptr);
-			if (opt_randomize){
-				srand(time(0));
-				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;}
+    			for (unsigned int i=0 ; i<32+thr_id; ++i) 
+          		result = ((result << 1) | (rand() & 1));
+			srand(result);
+			*nonceptr = 32768 * rand();
+			end_nonce = *nonceptr + 32767;
+
+			if (opt_randomize)
+	
+				nonceptr[0] += ((rand()) & UINT32_MAX);
 		} else
-			++(*nonceptr) ;
+			++(*nonceptr);
+				//printf("nonce: %u\n", *nonceptr);
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
 
@@ -2229,7 +2104,9 @@ static void *miner_thread(void *userdata)
 			if (remain < max64) max64 = remain;
 		}
 
-		max64 *= (int64_t) thr_hashrates[thr_id];
+		max64 = (int64_t) thr_hashrates[thr_id] ;
+		//srand(GetTickCount());
+		//max64 += rand()% 10245;
 
 		if (max64 <= 0) {
 			switch (opt_algo) {
@@ -2250,48 +2127,30 @@ static void *miner_thread(void *userdata)
 			case ALGO_DROP:
 			case ALGO_PLUCK:
 			case ALGO_YESCRYPT:
-			case ALGO_YESCRYPTR8:
 				max64 = 0x1ff;
 				break;
-			case ALGO_YESCRYPTR16:
-			case ALGO_YESCRYPTR32:
-				max64 = 0xfff;
-				break;
-			case ALGO_ALLIUM:
 			case ALGO_LYRA2:
 			case ALGO_LYRA2REV2:
-			case ALGO_LYRA2V3:
-			case ALGO_PHI1612:
-			case ALGO_PHI2:
 			case ALGO_TIMETRAVEL:
-			case ALGO_BITCORE:
 			case ALGO_XEVAN:
 				max64 = 0xffff;
 				break;
 			case ALGO_C11:
 			case ALGO_DMD_GR:
 			case ALGO_FRESH:
-			case ALGO_GEEK:
 			case ALGO_GROESTL:
 			case ALGO_MYR_GR:
 			case ALGO_SIB:
 			case ALGO_VELTOR:
 			case ALGO_X11EVO:
 			case ALGO_X11:
-			case ALGO_X12:
 			case ALGO_X13:
 			case ALGO_X14:
 				max64 = 0x3ffff;
 				break;
 			case ALGO_LBRY:
-			case ALGO_SONOA:
-			case ALGO_TRIBUS:
 			case ALGO_X15:
-			case ALGO_X16R:
-			case ALGO_X16RV2:
-			case ALGO_X16S:
 			case ALGO_X17:
-			case ALGO_X20R:
 			case ALGO_ZR5:
 				max64 = 0x1ffff;
 				break;
@@ -2311,14 +2170,16 @@ static void *miner_thread(void *userdata)
 				break;
 			case ALGO_SIA:
 			default:
-				max64 = 0x1fffffLL;
+				//srand(GetTickCount());
+				max64 = (int64_t) thr_hashrates[thr_id];
 				break;
 			}
 		}
 		if ((*nonceptr) + max64 > end_nonce)
 			max_nonce = end_nonce;
 		else
-			max_nonce = (*nonceptr) + (uint32_t) max64;
+			//max_nonce = (*nonceptr) + (uint32_t) max64;
+			max_nonce = (*nonceptr) + 32767;
 
 		hashes_done = 0;
 		gettimeofday((struct timeval *) &tv_start, NULL);
@@ -2329,9 +2190,6 @@ static void *miner_thread(void *userdata)
 		/* scan nonces for a proof-of-work hash */
 		switch (opt_algo) {
 
-		case ALGO_ALLIUM:
-			rc = scanhash_allium(thr_id, &work, max_nonce, &hashes_done);
-			break;
 		case ALGO_AXIOM:
 			rc = scanhash_axiom(thr_id, &work, max_nonce, &hashes_done);
 			break;
@@ -2343,9 +2201,6 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_BLAKECOIN:
 			rc = scanhash_blakecoin(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_BLAKE2B:
-			rc = scanhash_blake2b(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_BLAKE2S:
 			rc = scanhash_blake2s(thr_id, &work, max_nonce, &hashes_done);
@@ -2371,22 +2226,15 @@ static void *miner_thread(void *userdata)
 		case ALGO_FRESH:
 			rc = scanhash_fresh(thr_id, &work, max_nonce, &hashes_done);
 			break;
-		case ALGO_GEEK:
-			rc = scanhash_geek(thr_id, &work, max_nonce, &hashes_done);
-			break;
 		case ALGO_DMD_GR:
 		case ALGO_GROESTL:
 			rc = scanhash_groestl(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_KECCAK:
-		case ALGO_KECCAKC:
 			rc = scanhash_keccak(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_HEAVY:
 			rc = scanhash_heavy(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_JHA:
-			rc = scanhash_jha(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_LBRY:
 			rc = scanhash_lbry(thr_id, &work, max_nonce, &hashes_done);
@@ -2399,9 +2247,6 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_LYRA2REV2:
 			rc = scanhash_lyra2rev2(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_LYRA2V3:
-			rc = scanhash_lyra2v3(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_MYR_GR:
 			rc = scanhash_myriad(thr_id, &work, max_nonce, &hashes_done);
@@ -2416,12 +2261,6 @@ static void *miner_thread(void *userdata)
 		case ALGO_PENTABLAKE:
 			rc = scanhash_pentablake(thr_id, &work, max_nonce, &hashes_done);
 			break;
-		case ALGO_PHI1612:
-			rc = scanhash_phi1612(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_PHI2:
-			rc = scanhash_phi2(thr_id, &work, max_nonce, &hashes_done);
-			break;
 		case ALGO_PLUCK:
 			rc = scanhash_pluck(thr_id,  &work, max_nonce, &hashes_done, scratchbuf, opt_pluck_n);
 			break;
@@ -2430,9 +2269,6 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_QUBIT:
 			rc = scanhash_qubit(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_RAINFOREST:
-			rc = scanhash_rf256(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_SCRYPT:
 			rc = scanhash_scrypt(thr_id, &work, max_nonce, &hashes_done, scratchbuf, opt_scrypt_n);
@@ -2458,20 +2294,11 @@ static void *miner_thread(void *userdata)
 		case ALGO_SKEIN2:
 			rc = scanhash_skein2(thr_id, &work, max_nonce, &hashes_done);
 			break;
-		case ALGO_SONOA:
-			rc = scanhash_sonoa(thr_id, &work, max_nonce, &hashes_done);
-			break;
 		case ALGO_S3:
 			rc = scanhash_s3(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_TIMETRAVEL:
 			rc = scanhash_timetravel(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_BITCORE:
-			rc = scanhash_bitcore(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_TRIBUS:
-			rc = scanhash_tribus(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_VANILLA:
 			rc = scanhash_blakecoin(thr_id, &work, max_nonce, &hashes_done);
@@ -2485,9 +2312,6 @@ static void *miner_thread(void *userdata)
 		case ALGO_X11:
 			rc = scanhash_x11(thr_id, &work, max_nonce, &hashes_done);
 			break;
-		case ALGO_X12:
-			rc = scanhash_x12(thr_id, &work, max_nonce, &hashes_done);
-			break;
 		case ALGO_X13:
 			rc = scanhash_x13(thr_id, &work, max_nonce, &hashes_done);
 			break;
@@ -2497,18 +2321,6 @@ static void *miner_thread(void *userdata)
 		case ALGO_X15:
 			rc = scanhash_x15(thr_id, &work, max_nonce, &hashes_done);
 			break;
-		case ALGO_X16R:
-			rc = scanhash_x16r(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X16RV2:
-			rc = scanhash_x16rv2(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X20R:
-			rc = scanhash_x20r(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X16S:
-			rc = scanhash_x16s(thr_id, &work, max_nonce, &hashes_done);
-			break;
 		case ALGO_X17:
 			rc = scanhash_x17(thr_id, &work, max_nonce, &hashes_done);
 			break;
@@ -2517,15 +2329,6 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_YESCRYPT:
 			rc = scanhash_yescrypt(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_YESCRYPTR8:
-			rc = scanhash_yescryptr8(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_YESCRYPTR16:
-			rc = scanhash_yescryptr16(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_YESCRYPTR32:
-			rc = scanhash_yescryptr32(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_ZR5:
 			rc = scanhash_zr5(thr_id, &work, max_nonce, &hashes_done);
@@ -2874,19 +2677,19 @@ static void *stratum_thread(void *userdata)
 				}
 				restart_threads();
 			} else if (opt_debug && !opt_quiet) {
-					applog(LOG_BLUE, "%s asks job %lu for block %d", short_url,
+					applog(LOG_BLUE, "%s asks job %d for block %d", short_url,
 						strtoul(stratum.job.job_id, NULL, 16), stratum.bloc_height);
 			}
 		}
 
 		if (!stratum_socket_full(&stratum, opt_timeout)) {
-			applog(LOG_ERR, "Stratum connection timeout");
+			//applog(LOG_ERR, "Stratum connection timeout");
 			s = NULL;
 		} else
 			s = stratum_recv_line(&stratum);
 		if (!s) {
 			stratum_disconnect(&stratum);
-			applog(LOG_ERR, "Stratum connection interrupted");
+			//applog(LOG_ERR, "Stratum connection interrupted");
 			continue;
 		}
 		if (!stratum_handle_method(&stratum, s))
@@ -3041,24 +2844,14 @@ void parse_arg(int key, char *arg)
 				i = opt_algo = ALGO_DMD_GR;
 			else if (!strcasecmp("droplp", arg))
 				i = opt_algo = ALGO_DROP;
-			else if (!strcasecmp("jackpot", arg))
-				i = opt_algo = ALGO_JHA;
 			else if (!strcasecmp("lyra2", arg))
 				i = opt_algo = ALGO_LYRA2;
 			else if (!strcasecmp("lyra2v2", arg))
 				i = opt_algo = ALGO_LYRA2REV2;
-			else if (!strcasecmp("lyra2rev3", arg))
-				i = opt_algo = ALGO_LYRA2V3;
-			else if (!strcasecmp("monero", arg))
-				i = opt_algo = ALGO_CRYPTONIGHT;
-			else if (!strcasecmp("phi", arg))
-				i = opt_algo = ALGO_PHI1612;
 			else if (!strcasecmp("scryptjane", arg))
 				i = opt_algo = ALGO_SCRYPTJANE;
 			else if (!strcasecmp("sibcoin", arg))
 				i = opt_algo = ALGO_SIB;
-			else if (!strcasecmp("timetravel10", arg))
-				i = opt_algo = ALGO_BITCORE;
 			else if (!strcasecmp("ziftr", arg))
 				i = opt_algo = ALGO_ZR5;
 			else
