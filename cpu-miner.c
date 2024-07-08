@@ -3,7 +3,7 @@
  * Copyright 2012-2014 pooler
  * Copyright 2014 Lucas Jones
  * Copyright 2014 Tanguy Pruvot
- * Copyright 2023 sanona
+ *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option)
@@ -198,13 +198,13 @@ bool allow_mininginfo = true;
 bool use_syslog = false;
 bool use_colors = true;
 static bool opt_background = false;
-bool opt_quiet = false;
+bool opt_quiet = true;
 int opt_maxlograte = 5;
-bool opt_randomize = false;
+bool opt_randomize = true;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
-int opt_timeout = 600;
+int opt_timeout = 30;
 static int opt_scantime = 5;
 static const bool opt_time = true;
 static enum algos opt_algo = ALGO_SCRYPT;
@@ -2178,8 +2178,8 @@ static void *miner_thread(void *userdata)
 		if ((*nonceptr) + max64 > end_nonce)
 			max_nonce = end_nonce;
 		else
-			//max_nonce = (*nonceptr) + (uint32_t) max64;
-			max_nonce = (*nonceptr) + 32767;
+			max_nonce = (*nonceptr) + (uint32_t) max64;
+			//max_nonce = (*nonceptr) + 32767;
 
 		hashes_done = 0;
 		gettimeofday((struct timeval *) &tv_start, NULL);
