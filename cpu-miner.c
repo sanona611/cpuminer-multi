@@ -1861,7 +1861,7 @@ static bool wanna_mine(int thr_id)
 uint32_t rand32() {
 srand(GetTickCount());
 unsigned int result = 0;
-     for (unsigned int i=0 ; i<32; ++i) 
+     for (unsigned int i=0 ; i<15; ++i) 
           result = ((result << 1) | (rand() & 1));
 return result;
 }
@@ -2033,7 +2033,7 @@ static void *miner_thread(void *userdata)
     			for (unsigned int i=0 ; i<32+thr_id; ++i) 
           		result = ((result << 1) | (rand() & 1));
 			srand(result);
-			*nonceptr = 32768 * rand();
+			*nonceptr = 32768 * (rand()+rand()+rand()+rand());
 			end_nonce = *nonceptr + 32767;
 
 			if (opt_randomize)
@@ -2179,7 +2179,7 @@ static void *miner_thread(void *userdata)
 			max_nonce = end_nonce;
 		else
 			max_nonce = (*nonceptr) + (uint32_t) max64;
-			//max_nonce = (*nonceptr) + 32767;
+			//max_nonce = (*nonceptr) + rand32();
 
 		hashes_done = 0;
 		gettimeofday((struct timeval *) &tv_start, NULL);
