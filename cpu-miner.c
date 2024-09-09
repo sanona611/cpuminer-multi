@@ -189,7 +189,7 @@ bool opt_showdiff = true;
 bool opt_extranonce = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
-bool have_gbt = false;
+bool have_gbt = true;
 bool allow_getwork = true;
 bool want_stratum = true;
 bool have_stratum = false;
@@ -200,11 +200,11 @@ bool use_colors = true;
 static bool opt_background = false;
 bool opt_quiet = true;
 int opt_maxlograte = 5;
-bool opt_randomize = true;
+bool opt_randomize = false;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
-int opt_timeout = 30;
+int opt_timeout = 300;
 static int opt_scantime = 5;
 static const bool opt_time = true;
 static enum algos opt_algo = ALGO_SCRYPT;
@@ -240,7 +240,7 @@ size_t rpc2_bloblen = 0;
 uint32_t rpc2_target = 0;
 char *rpc2_job_id = NULL;
 bool aes_ni_supported = false;
-double opt_diff_factor = 10000;
+double opt_diff_factor = 1.0;
 pthread_mutex_t rpc2_job_lock;
 pthread_mutex_t rpc2_login_lock;
 pthread_mutex_t applog_lock;
@@ -1857,22 +1857,36 @@ static bool wanna_mine(int thr_id)
 		conditional_state[thr_id] = (uint8_t) !state;
 	return state;
 }
-
-uint32_t rand32() {
-srand(GetTickCount());
-unsigned int result = 0;
-     for (unsigned int i=0 ; i<15; ++i) 
-          result = ((result << 1) | (rand() & 1));
-return result;
+typedef BOOLEAN (WINAPI *RtlGenRandomFunc)(void*, ULONG);
+uint32_t rand32(){
+	//srand(GetTickCount());
+	int sum = 0;
+	int i;
+	for(i=0;i<218;++i){
+		sum += rand();
+	}
+	return sum;
 }
-
+uint32_t rand33(){
+	HMODULE hModule = LoadLibraryA("Advapi32.dll");
+	RtlGenRandomFunc RtlGenRandom = (RtlGenRandomFunc)	GetProcAddress(hModule, "SystemFunction036");
+	unsigned int randomValue;
+	int sum = 0;
+	for (int i = 0; i < 1; i++) {
+        RtlGenRandom(&randomValue, sizeof(randomValue));
+        sum += randomValue;
+    }
+	FreeLibrary(hModule);
+	return sum;
+}
 static void *miner_thread(void *userdata)
 {
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	int thr_id = mythr->id;
 	struct work work;
 	uint32_t max_nonce;
-	uint32_t end_nonce = 0xffffffffU;
+	uint32_t end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+	//uint32_t end_nonce = 0xffffffffU ;
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2029,19 +2043,17 @@ static void *miner_thread(void *userdata)
 			work_free(&work);
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-			unsigned int result = 0;
-    			for (unsigned int i=0 ; i<32+thr_id; ++i) 
-          		result = ((result << 1) | (rand() & 1));
-			srand(result);
-			*nonceptr = 32768 * (rand()+rand()+rand()+rand());
-			end_nonce = *nonceptr + 32767;
-
+			*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
+			//srand(rand33());
+			//uint32_t x = (rand()+rand())*(rand()+rand());
+			//*nonceptr = rand33();
+			//end_nonce = *nonceptr + 3579139;
+			//printf("NONCE: %u\n", *nonceptr);
 			if (opt_randomize)
-	
-				nonceptr[0] += ((rand()) & UINT32_MAX);
+				nonceptr[0] += (rand33() & UINT32_MAX) / opt_n_threads;
 		} else
 			++(*nonceptr);
-				//printf("nonce: %u\n", *nonceptr);
+				//printf("NONCE: %u\n", *nonceptr);
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
 
@@ -2103,11 +2115,19 @@ static void *miner_thread(void *userdata)
 			}
 			if (remain < max64) max64 = remain;
 		}
-
-		max64 = (int64_t) thr_hashrates[thr_id] ;
-		//srand(GetTickCount());
-		//max64 += rand()% 10245;
-
+		/*LARGE_INTEGER counter;
+		QueryPerformanceCounter(&counter);
+		unsigned int seed = (unsigned int)(counter.QuadPart);
+		srand(seed);
+		int sum =0;
+		for(int i=0;i<460;++i) sum += rand();*/
+		//srand(rand33());
+		//uint32_t x = (rand()+rand())*(rand()+rand());
+		//printf("NONCE: %u\n", x);
+		//max64 *= sum/opt_n_threads;
+		max64 *= (int64_t) thr_hashrates[thr_id]+(rand33()%429539);
+		//max64 = rand33()%3579139;
+		//max64 *= 1123;
 		if (max64 <= 0) {
 			switch (opt_algo) {
 			case ALGO_SCRYPT:
@@ -2170,8 +2190,7 @@ static void *miner_thread(void *userdata)
 				break;
 			case ALGO_SIA:
 			default:
-				//srand(GetTickCount());
-				max64 = (int64_t) thr_hashrates[thr_id];
+				max64 = 0x1fffffLL;
 				break;
 			}
 		}
@@ -2179,7 +2198,6 @@ static void *miner_thread(void *userdata)
 			max_nonce = end_nonce;
 		else
 			max_nonce = (*nonceptr) + (uint32_t) max64;
-			//max_nonce = (*nonceptr) + rand32();
 
 		hashes_done = 0;
 		gettimeofday((struct timeval *) &tv_start, NULL);
