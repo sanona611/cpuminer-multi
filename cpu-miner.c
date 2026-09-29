@@ -1169,6 +1169,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			free(hashhex);
 		} else {
 			char *xnonce2str;
+			uint32_t version_bits = stratum.version_rolling ?
+				(work->data[0] & stratum.version_mask) : 0;
 
 			switch (opt_algo) {
 			case ALGO_DECRED:
@@ -1207,9 +1209,15 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			} else {
 				xnonce2str = abin2hex(work->xnonce2, work->xnonce2_len);
 			}
-			snprintf(s, JSON_BUF_LEN,
-					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":4}",
-					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr);
+			if (stratum.version_rolling) {
+				snprintf(s, JSON_BUF_LEN,
+						"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%08x\"], \"id\":4}",
+						rpc_user, work->job_id, xnonce2str, ntimestr, noncestr, version_bits);
+			} else {
+				snprintf(s, JSON_BUF_LEN,
+						"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":4}",
+						rpc_user, work->job_id, xnonce2str, ntimestr, noncestr);
+			}
 			free(xnonce2str);
 		}
 
@@ -1722,6 +1730,73 @@ err_out:
 	return false;
 }
 
+/* MT19937 (Mersenne Twister) used for Stratum extranonce/version rolling. */
+#define MT_N 624
+#define MT_M 397
+#define MT_MATRIX_A 0x9908b0dfU
+#define MT_UPPER_MASK 0x80000000U
+#define MT_LOWER_MASK 0x7fffffffU
+
+static uint32_t mt_state[MT_N];
+static size_t mt_index = MT_N + 1;
+
+static void mt19937_seed(uint32_t seed)
+{
+	mt_state[0] = seed;
+	for (size_t i = 1; i < MT_N; i++)
+		mt_state[i] = 1812433253U * (mt_state[i - 1] ^ (mt_state[i - 1] >> 30)) + (uint32_t)i;
+	mt_index = MT_N;
+}
+
+static void mt19937_twist(void)
+{
+	for (size_t i = 0; i < MT_N; i++) {
+		uint32_t y = (mt_state[i] & MT_UPPER_MASK) |
+			(mt_state[(i + 1) % MT_N] & MT_LOWER_MASK);
+		mt_state[i] = mt_state[(i + MT_M) % MT_N] ^ (y >> 1);
+		if (y & 1U)
+			mt_state[i] ^= MT_MATRIX_A;
+	}
+	mt_index = 0;
+}
+
+static uint32_t mt19937_rand32(void)
+{
+	uint32_t y;
+	if (mt_index >= MT_N) {
+		if (mt_index == MT_N + 1) {
+			uint32_t seed = (uint32_t)time(NULL) ^
+				(uint32_t)(uintptr_t)&mt_state ^ 0x9e3779b9U;
+			mt19937_seed(seed);
+		}
+		mt19937_twist();
+	}
+	y = mt_state[mt_index++];
+	y ^= y >> 11;
+	y ^= (y << 7) & 0x9d2c5680U;
+	y ^= (y << 15) & 0xefc60000U;
+	y ^= y >> 18;
+	return y;
+}
+
+static void stratum_randomize_extranonce2(struct stratum_ctx *sctx, struct work *work)
+{
+	size_t i;
+	bool different;
+
+	if (!sctx->xnonce2_size || !work->xnonce2)
+		return;
+
+	do {
+		for (i = 0; i < sctx->xnonce2_size; i += sizeof(uint32_t)) {
+			uint32_t r = mt19937_rand32();
+			size_t n = min(sizeof(r), sctx->xnonce2_size - i);
+			memcpy(sctx->job.xnonce2 + i, &r, n);
+		}
+		different = memcmp(sctx->job.xnonce2, work->xnonce2, sctx->xnonce2_size) != 0;
+	} while (!different);
+}
+
 static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 {
 	uint32_t extraheader[32] = { 0 };
@@ -1776,13 +1851,19 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 				sha256d(merkle_root, merkle_root, 64);
 		}
 
-		/* Increment extranonce2 */
-		for (size_t t = 0; t < sctx->xnonce2_size && !(++sctx->job.xnonce2[t]); t++)
-			;
+		/* Randomize extranonce2 for the next work unit. The current work
+		 * copy still contains the extranonce2 used to build its Merkle root. */
+		stratum_randomize_extranonce2(sctx, work);
 
 		/* Assemble block header */
 		memset(work->data, 0, 128);
 		work->data[0] = le32dec(sctx->job.version);
+		if (sctx->version_rolling && sctx->version_mask) {
+			uint32_t version_bits = mt19937_rand32() & sctx->version_mask;
+			work->data[0] = (work->data[0] & ~sctx->version_mask) | version_bits;
+			if (opt_debug)
+				applog(LOG_DEBUG, "Stratum rolled version bits=%08x", version_bits);
+		}
 		for (i = 0; i < 8; i++)
 			work->data[1 + i] = le32dec((uint32_t *) sctx->job.prevhash + i);
 		for (i = 0; i < 8; i++)
@@ -2786,6 +2867,7 @@ static void *stratum_thread(void *userdata)
 			restart_threads();
 
 			if (!stratum_connect(&stratum, stratum.url)
+					|| !stratum_configure(&stratum)
 					|| !stratum_subscribe(&stratum)
 					|| !stratum_authorize(&stratum, rpc_user, rpc_pass)) {
 				stratum_disconnect(&stratum);
