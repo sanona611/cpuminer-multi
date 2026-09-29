@@ -2674,6 +2674,14 @@ static void *miner_thread(void *userdata)
 
 		/* if nonce found, submit work */
 		if (rc && !opt_benchmark) {
+			if (opt_debug && have_stratum && work.xnonce2 && work.xnonce2_len <= 64) {
+				char xnonce2hex[129];
+				bin2hex(xnonce2hex, work.xnonce2, work.xnonce2_len);
+				applog(LOG_DEBUG,
+					"FOUND: thr=%d job_id='%s' extranonce2=%s ntime=%08x nonce=%08x version_bits=%08x",
+					thr_id, work.job_id, xnonce2hex,
+					swab32(work.data[17]), swab32(work.data[19]), work.version_bits);
+			}
 			if (!submit_work(mythr, &work))
 				break;
 			// prevent stale work in solo
