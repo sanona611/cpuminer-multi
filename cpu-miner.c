@@ -2364,13 +2364,15 @@ static void *miner_thread(void *userdata)
 				time_t now = time(NULL);
 				int64_t roll_wait;
 
-				/* ntime rolling uses its configurable deadline. */
-				roll_wait = (int64_t)opt_timerolltime -
-					(int64_t)(now - stratum.last_ntime_roll);
-				if (roll_wait < 1)
-					roll_wait = 1;
-				if (roll_wait < max64)
-					max64 = roll_wait;
+				/* ntime rolling has its own, independently configurable deadline. */
+				if (opt_timeroll && opt_timerolltime > 0) {
+					roll_wait = (int64_t)opt_timerolltime -
+						(int64_t)(now - stratum.last_ntime_roll);
+					if (roll_wait < 1)
+						roll_wait = 1;
+					if (roll_wait < max64)
+						max64 = roll_wait;
+				}
 
 				/* E2 rolling has its own, independently configurable deadline. */
 				if (opt_e2roll && opt_e2rolltime > 0) {
