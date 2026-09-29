@@ -1872,9 +1872,17 @@ static bool stratum_set_version_mask(struct stratum_ctx *sctx, json_t *params)
 		return false;
 
 	pthread_mutex_lock(&sctx->work_lock);
+	uint32_t old_mask = sctx->version_mask;
 	sctx->version_mask = (uint32_t) parsed_mask & 0x1fffe000U;
 	sctx->version_rolling = sctx->version_mask != 0;
 	pthread_mutex_unlock(&sctx->work_lock);
+
+	/* The new mask is effective immediately. Reconnect so any in-flight
+	 * work is rebuilt with the new mask before another share is submitted. */
+	if (old_mask != sctx->version_mask) {
+		extern bool stratum_need_reset;
+		stratum_need_reset = true;
+	}
 
 	if (opt_debug)
 		applog(LOG_DEBUG, "Stratum version rolling mask updated to %08x", sctx->version_mask);
