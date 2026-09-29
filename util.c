@@ -1852,6 +1852,7 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 
 	/* Start the ntime rolling interval from the latest Stratum job. */
 	sctx->last_ntime_roll = time(NULL);
+	sctx->last_extranonce2_roll = time(NULL);
 
 	sctx->job.diff = sctx->next_diff;
 
