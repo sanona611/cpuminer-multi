@@ -447,6 +447,10 @@ struct stratum_ctx {
 	double next_diff;
 	double sharediff;
 
+	/* BIP310 Stratum version rolling state. */
+	bool version_rolling;
+	uint32_t version_mask;
+
 	char *session_id;
 	size_t xnonce1_size;
 	unsigned char *xnonce1;
@@ -463,6 +467,7 @@ bool stratum_send_line(struct stratum_ctx *sctx, char *s);
 char *stratum_recv_line(struct stratum_ctx *sctx);
 bool stratum_connect(struct stratum_ctx *sctx, const char *url);
 void stratum_disconnect(struct stratum_ctx *sctx);
+bool stratum_configure(struct stratum_ctx *sctx);
 bool stratum_subscribe(struct stratum_ctx *sctx);
 bool stratum_authorize(struct stratum_ctx *sctx, const char *user, const char *pass);
 bool stratum_handle_method(struct stratum_ctx *sctx, const char *s);
