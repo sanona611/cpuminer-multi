@@ -3543,7 +3543,7 @@ void parse_arg(int key, char *arg)
 			opt_e2rolltime = atoi(optarg);
 		else {
 			applog(LOG_ERR, "Invalid --e2rolltime value: %s", optarg);
-			return 1;
+			opt_e2rolltime = 5;
 		}
 		break;
 	case 1026:
