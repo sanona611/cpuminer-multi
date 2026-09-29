@@ -1211,8 +1211,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				applog(LOG_DEBUG,
 					"SUBMIT: job_id='%s' ntime=%08x nonce=%08x version_bits=%08x",
 					work->job_id,
-					le32dec(work->data[17]),
-					le32dec(work->data[19]),
+					swab32(work->data[17]),
+					swab32(work->data[19]),
 					work->version_bits);
 			}
 			if (stratum.version_rolling) {
