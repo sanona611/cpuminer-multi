@@ -241,6 +241,7 @@ static bool opt_background = false;
 bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
+bool opt_e2randomize = false;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
@@ -401,6 +402,7 @@ Options:\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
       --randomize       Randomize scan range start to reduce duplicates\n\
+      --e2randomize     Randomize Stratum extranonce2 using MT19937\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -482,6 +484,7 @@ static struct option const options[] = {
 	{ "retries", 1, NULL, 'r' },
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
+	{ "e2randomize", 0, NULL, 1025 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
 	{ "hide-diff", 0, NULL, 1014 },
@@ -1852,9 +1855,16 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		work->xnonce2_len = sctx->xnonce2_size;
 		work->xnonce2 = (uchar*) realloc(work->xnonce2, sctx->xnonce2_size);
 
-		/* Choose the random extranonce2 before constructing the Merkle root,
-		 * so the header and the submitted extranonce2 always match. */
-		stratum_randomize_extranonce2(sctx);
+		/* Choose extranonce2 before constructing the Merkle root, so the
+		 * header and the submitted extranonce2 always match. */
+		if (opt_e2randomize) {
+			stratum_randomize_extranonce2(sctx);
+		} else {
+			for (size_t t = 0;
+			     t < sctx->xnonce2_size && !(++sctx->job.xnonce2[t]);
+			     t++)
+				;
+		}
 		memcpy(work->xnonce2, sctx->job.xnonce2, sctx->xnonce2_size);
 
 		/* Generate merkle root */
@@ -3476,6 +3486,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1024:
 		opt_randomize = true;
+		break;
+	case 1025:
+		opt_e2randomize = true;
 		break;
 	case 'V':
 		show_version_and_exit();
