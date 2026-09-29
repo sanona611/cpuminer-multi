@@ -404,7 +404,9 @@ Options:\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
       --randomize       Randomize scan range start to reduce duplicates\n\
-      --e2randomize     Randomize Stratum extranonce2 using MT19937\n\
+      --e2rand          Randomize Stratum extranonce2 using MT19937\n\
+      --e2roll          Enable periodic Stratum extranonce2 rolling\n\
+      --e2rolltime=N    Set extranonce2 roll interval in seconds (default: 5)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
