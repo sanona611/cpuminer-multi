@@ -1207,6 +1207,14 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			} else {
 				xnonce2str = abin2hex(work->xnonce2, work->xnonce2_len);
 			}
+			if (opt_debug) {
+				applog(LOG_DEBUG,
+					"SUBMIT: job_id='%s' ntime=%08x nonce=%08x version_bits=%08x",
+					work->job_id,
+					le32dec(work->data[17]),
+					le32dec(work->data[19]),
+					work->version_bits);
+			}
 			if (stratum.version_rolling) {
 				snprintf(s, JSON_BUF_LEN,
 						"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%08x\"], \"id\":4}",
@@ -1797,27 +1805,27 @@ static void stratum_randomize_extranonce2(struct stratum_ctx *sctx)
 	} while (!different);
 }
 
-#define STRATUM_NTIME_ROLL_INTERVAL 30
+#define STRATUM_NTIME_ROLL_INTERVAL 1
 
 /* Roll ntime forward for standard Bitcoin-style Stratum jobs. */
 static bool stratum_roll_ntime(struct stratum_ctx *sctx, struct work *work)
 {
 	time_t now = time(NULL);
-	uint32_t job_ntime = le32dec(sctx->job.ntime);
-	uint32_t current_ntime = work->data[17];
+	uint32_t current_ntime = swab32(work->data[17]);
+	uint32_t now_ntime = (uint32_t) now;
 	uint32_t rolled_ntime;
 
 	if (now <= sctx->last_ntime_roll ||
 		now - sctx->last_ntime_roll < STRATUM_NTIME_ROLL_INTERVAL)
 		return false;
 
-	rolled_ntime = (uint32_t) now;
-	if (rolled_ntime < job_ntime)
-		rolled_ntime = job_ntime;
+	rolled_ntime = current_ntime + 1;
+	if (rolled_ntime < now_ntime)
+		rolled_ntime = now_ntime;
 	if (rolled_ntime <= current_ntime)
 		return false;
 
-	work->data[17] = rolled_ntime;
+	work->data[17] = swab32(rolled_ntime);
 	sctx->last_ntime_roll = now;
 
 	if (opt_debug)
