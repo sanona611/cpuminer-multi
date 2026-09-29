@@ -244,6 +244,8 @@ bool opt_randomize = false;
 bool opt_e2rand = false;
 bool opt_e2roll = false;
 int opt_e2rolltime = 5;
+bool opt_timeroll = true;
+int opt_timerolltime = 1;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
@@ -407,6 +409,8 @@ Options:\n\
       --e2rand          Randomize Stratum extranonce2 using MT19937\n\
       --e2roll          Enable periodic Stratum extranonce2 rolling\n\
       --e2rolltime=N    Set extranonce2 roll interval in seconds (default: 5)\n\
+      --timeroll     Enable periodic Stratum ntime rolling\n\
+      --timerolltime=N Set ntime roll interval in seconds (default: 1)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -491,6 +495,8 @@ static struct option const options[] = {
 	{ "e2rand", 0, NULL, 1025 },
 	{ "e2rolltime", 1, NULL, 1027 },
 	{ "e2roll", 0, NULL, 1026 },
+	{ "timeroll", 0, NULL, 1028 },
+	{ "timerolltime", 1, NULL, 1029 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
 	{ "hide-diff", 0, NULL, 1014 },
@@ -1814,8 +1820,6 @@ static void stratum_randomize_extranonce2(struct stratum_ctx *sctx)
 	} while (!different);
 }
 
-#define STRATUM_NTIME_ROLL_INTERVAL 1
-
 /* Roll ntime forward for standard Bitcoin-style Stratum jobs. */
 static bool stratum_roll_ntime(struct stratum_ctx *sctx, struct work *work)
 {
@@ -1824,8 +1828,9 @@ static bool stratum_roll_ntime(struct stratum_ctx *sctx, struct work *work)
 	uint32_t now_ntime = (uint32_t) now;
 	uint32_t rolled_ntime;
 
-	if (now <= sctx->last_ntime_roll ||
-		now - sctx->last_ntime_roll < STRATUM_NTIME_ROLL_INTERVAL)
+	if (!opt_timeroll || opt_timerolltime <= 0 ||
+		now <= sctx->last_ntime_roll ||
+		now - sctx->last_ntime_roll < opt_timerolltime)
 		return false;
 
 	rolled_ntime = current_ntime + 1;
@@ -1923,7 +1928,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 				(internal_bits & internal_mask);
 
 			if (opt_debug)
-				applog(LOG_DEBUG, "Stratum rolled version bits=%08x internal=%08x",
+				applog(LOG_DEBUG, "Stratum generated version bits=%08x internal=%08x",
 					work->version_bits, work->data[0]);
 		}
 		for (i = 0; i < 8; i++)
@@ -2078,7 +2083,8 @@ static bool stratum_roll_extranonce2(struct stratum_ctx *sctx, struct work *work
 	if (opt_debug && work->xnonce2 && work->xnonce2_len <= 64) {
 		char xnonce2hex[129];
 		bin2hex(xnonce2hex, work->xnonce2, work->xnonce2_len);
-		applog(LOG_DEBUG, "Stratum rolled extranonce2=%s", xnonce2hex);
+		applog(LOG_DEBUG, "Stratum rolled extranonce2=%s preserved version_bits=%08x",
+			xnonce2hex, work->version_bits);
 	}
 
 	return true;
@@ -2358,7 +2364,7 @@ static void *miner_thread(void *userdata)
 				time_t now = time(NULL);
 				int64_t roll_wait;
 
-				/* ntime rolling is checked every second. */
+				/* ntime rolling uses its configurable deadline. */
 				roll_wait = STRATUM_NTIME_ROLL_INTERVAL -
 					(int64_t)(now - stratum.last_ntime_roll);
 				if (roll_wait < 1)
@@ -2367,8 +2373,8 @@ static void *miner_thread(void *userdata)
 					max64 = roll_wait;
 
 				/* E2 rolling has its own, independently configurable deadline. */
-				if (opt_e2roll && opt_e2rolltime > 0) {
-					roll_wait = (int64_t)opt_e2rolltime -
+				if (opt_timeroll && opt_timerolltime > 0) {
+					roll_wait = (int64_t)opt_timerolltime -
 						(int64_t)(now - stratum.last_extranonce2_roll);
 					if (roll_wait < 1)
 						roll_wait = 1;
@@ -3599,6 +3605,17 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1026:
 		opt_e2roll = true;
+		break;
+	case 1028:
+		opt_timeroll = true;
+		break;
+	case 1029:
+		if (atoi(arg) > 0)
+			opt_timerolltime = atoi(arg);
+		else {
+			applog(LOG_ERR, "Invalid --timerolltime value: %s", arg);
+			opt_timerolltime = 1;
+		}
 		break;
 	case 'V':
 		show_version_and_exit();
