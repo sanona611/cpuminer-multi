@@ -2199,16 +2199,9 @@ static void *miner_thread(void *userdata)
 
 			pthread_mutex_lock(&g_work_lock);
 
-			/* Roll ntime without rebuilding the coinbase/merkle root. Only
-			 * thread 0 performs the update; other threads pick up g_work below. */
-			if (thr_id == 0 && opt_algo != ALGO_DECRED && opt_algo != ALGO_LBRY &&
-				opt_algo != ALGO_SIA) {
-				rolled_ntime = stratum_roll_ntime(&stratum, &g_work);
-				if (rolled_ntime)
-					restart_threads();
-			}
-
-			// to clean: is g_work loaded before the memcmp ?
+			/* A full work regeneration takes precedence over ntime rolling.
+			 * Otherwise stratum_gen_work() below would immediately replace the
+			 * rolled ntime with the job's original ntime. */
 			regen_work = regen_work || ( (*nonceptr) >= end_nonce
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
