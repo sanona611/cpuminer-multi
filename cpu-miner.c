@@ -2494,6 +2494,13 @@ static void *miner_thread(void *userdata)
 		else
 			max_nonce = (*nonceptr) + (uint32_t) max64;
 
+		/* Capture the exact scan range before entering scanhash().
+		 * This makes it possible to distinguish an early share from a
+		 * batch that was actually capped too aggressively.
+		 */
+		uint32_t scan_first_nonce = *nonceptr;
+		uint32_t scan_max_nonce = max_nonce;
+
 		hashes_done = 0;
 		gettimeofday((struct timeval *) &tv_start, NULL);
 
@@ -2717,6 +2724,23 @@ static void *miner_thread(void *userdata)
 			thr_hashrates[thr_id] =
 				hashes_done / (diff.tv_sec + diff.tv_usec * 1e-6);
 			pthread_mutex_unlock(&stats_lock);
+		}
+
+		if (opt_debug && have_stratum && opt_algo == ALGO_SHA256D) {
+			char xnonce2hex[129] = "";
+			double scan_elapsed = diff.tv_sec + diff.tv_usec * 1e-6;
+			if (work.xnonce2 && work.xnonce2_len <= 64)
+				bin2hex(xnonce2hex, work.xnonce2, work.xnonce2_len);
+			applog(LOG_DEBUG,
+				"SCAN: job_id='%s' extranonce2=%s first_nonce=%08x max_nonce=%08x final_nonce=%08x hashes_done=%llu elapsed=%.6fs rate=%.3fMH/s rc=%d restart=%d",
+				work.job_id ? work.job_id : "",
+				xnonce2hex,
+				scan_first_nonce, scan_max_nonce, work.data[19],
+				(unsigned long long) hashes_done,
+				scan_elapsed,
+				scan_elapsed > 0.0 ?
+					((double) hashes_done / scan_elapsed) / 1000000.0 : 0.0,
+				rc, work_restart[thr_id].restart);
 		}
 		if (!opt_quiet && (time(NULL) - tm_rate_log) > opt_maxlograte) {
 			switch(opt_algo) {
