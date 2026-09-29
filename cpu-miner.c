@@ -1169,8 +1169,6 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			free(hashhex);
 		} else {
 			char *xnonce2str;
-			uint32_t version_bits = stratum.version_rolling ?
-				(work->data[0] & stratum.version_mask) : 0;
 
 			switch (opt_algo) {
 			case ALGO_DECRED:
@@ -1212,7 +1210,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			if (stratum.version_rolling) {
 				snprintf(s, JSON_BUF_LEN,
 						"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%08x\"], \"id\":4}",
-						rpc_user, work->job_id, xnonce2str, ntimestr, noncestr, version_bits);
+						rpc_user, work->job_id, xnonce2str, ntimestr, noncestr, work->version_bits);
 			} else {
 				snprintf(s, JSON_BUF_LEN,
 						"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":4}",
@@ -1860,11 +1858,12 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		/* Assemble block header */
 		memset(work->data, 0, 128);
 		work->data[0] = le32dec(sctx->job.version);
+		work->version_bits = 0;
 		if (sctx->version_rolling && sctx->version_mask) {
-			uint32_t version_bits = mt19937_rand32() & sctx->version_mask;
-			work->data[0] = (work->data[0] & ~sctx->version_mask) | version_bits;
+			work->version_bits = mt19937_rand32() & sctx->version_mask;
+			work->data[0] = (work->data[0] & ~sctx->version_mask) | work->version_bits;
 			if (opt_debug)
-				applog(LOG_DEBUG, "Stratum rolled version bits=%08x", version_bits);
+				applog(LOG_DEBUG, "Stratum rolled version bits=%08x", work->version_bits);
 		}
 		for (i = 0; i < 8; i++)
 			work->data[1 + i] = le32dec((uint32_t *) sctx->job.prevhash + i);
