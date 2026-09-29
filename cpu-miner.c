@@ -2205,6 +2205,13 @@ static void *miner_thread(void *userdata)
 			regen_work = regen_work || ( (*nonceptr) >= end_nonce
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
+
+			if (!regen_work && thr_id == 0 && opt_algo != ALGO_DECRED &&
+				opt_algo != ALGO_LBRY && opt_algo != ALGO_SIA) {
+				rolled_ntime = stratum_roll_ntime(&stratum, &g_work);
+				if (rolled_ntime)
+					restart_threads();
+			}
 			if (regen_work) {
 				stratum_gen_work(&stratum, &g_work);
 			}
