@@ -242,6 +242,7 @@ bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
 bool opt_e2randomize = false;
+bool opt_e2roll = false;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
@@ -485,6 +486,7 @@ static struct option const options[] = {
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
 	{ "e2randomize", 0, NULL, 1025 },
+	{ "e2roll", 0, NULL, 1026 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
 	{ "hide-diff", 0, NULL, 1014 },
@@ -2040,6 +2042,46 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		}
 	}
 }
+#define STRATUM_EXTRANONCE2_ROLL_INTERVAL 5
+
+/* Roll extranonce2 periodically without resetting the current ntime/version. */
+static bool stratum_roll_extranonce2(struct stratum_ctx *sctx, struct work *work)
+{
+	time_t now = time(NULL);
+	uint32_t current_ntime;
+	uint32_t current_version;
+	uint32_t current_version_bits;
+
+	if (!opt_e2roll || jsonrpc_2 || !sctx->xnonce2_size ||
+	    !sctx->job.job_id)
+		return false;
+
+	if (now <= sctx->last_extranonce2_roll ||
+	    now - sctx->last_extranonce2_roll < STRATUM_EXTRANONCE2_ROLL_INTERVAL)
+		return false;
+
+	current_ntime = work->data[17];
+	current_version = work->data[0];
+	current_version_bits = work->version_bits;
+
+	/* stratum_gen_work() advances/randomizes extranonce2 and rebuilds
+	 * the Merkle root/header. Restore the rolling fields afterwards. */
+	stratum_gen_work(sctx, work);
+	work->data[17] = current_ntime;
+	work->data[0] = current_version;
+	work->version_bits = current_version_bits;
+
+	sctx->last_extranonce2_roll = now;
+
+	if (opt_debug && work->xnonce2 && work->xnonce2_len <= 64) {
+		char xnonce2hex[129];
+		bin2hex(xnonce2hex, work->xnonce2, work->xnonce2_len);
+		applog(LOG_DEBUG, "Stratum rolled extranonce2=%s", xnonce2hex);
+	}
+
+	return true;
+}
+
 
 bool rpc2_stratum_job(struct stratum_ctx *sctx, json_t *params)
 {
@@ -2228,6 +2270,10 @@ static void *miner_thread(void *userdata)
 				opt_algo != ALGO_LBRY && opt_algo != ALGO_SIA) {
 				rolled_ntime = stratum_roll_ntime(&stratum, &g_work);
 				if (rolled_ntime)
+					restart_threads();
+
+				if (opt_e2roll &&
+					stratum_roll_extranonce2(&stratum, &g_work))
 					restart_threads();
 			}
 			if (regen_work) {
@@ -3489,6 +3535,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1025:
 		opt_e2randomize = true;
+		break;
+	case 1026:
+		opt_e2roll = true;
 		break;
 	case 'V':
 		show_version_and_exit();
