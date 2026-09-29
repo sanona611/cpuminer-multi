@@ -2346,10 +2346,37 @@ static void *miner_thread(void *userdata)
 			continue;
 		}
 
-		/* adjust max_nonce to meet target scan time */
-		if (have_stratum)
+		/* Adjust max_nonce to meet the target scan time.
+		 * For Stratum, do not let a scan batch cross the next rolling
+		 * deadline. Otherwise the 60-second LP_SCANTIME batch can keep
+		 * thread 0 inside scanhash() long enough to starve ntime/E2 rolling.
+		 */
+		if (have_stratum) {
 			max64 = LP_SCANTIME;
-		else
+
+			if (thr_id == 0) {
+				time_t now = time(NULL);
+				int64_t roll_wait;
+
+				/* ntime rolling is checked every second. */
+				roll_wait = STRATUM_NTIME_ROLL_INTERVAL -
+					(int64_t)(now - stratum.last_ntime_roll);
+				if (roll_wait < 1)
+					roll_wait = 1;
+				if (roll_wait < max64)
+					max64 = roll_wait;
+
+				/* E2 rolling has its own, independently configurable deadline. */
+				if (opt_e2roll && opt_e2rolltime > 0) {
+					roll_wait = (int64_t)opt_e2rolltime -
+						(int64_t)(now - stratum.last_extranonce2_roll);
+					if (roll_wait < 1)
+						roll_wait = 1;
+					if (roll_wait < max64)
+						max64 = roll_wait;
+				}
+			}
+		} else
 			max64 = g_work_time + (have_longpoll ? LP_SCANTIME : opt_scantime)
 					- time(NULL);
 
