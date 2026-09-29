@@ -1779,21 +1779,23 @@ static uint32_t mt19937_rand32(void)
 	return y;
 }
 
-static void stratum_randomize_extranonce2(struct stratum_ctx *sctx, struct work *work)
+static void stratum_randomize_extranonce2(struct stratum_ctx *sctx)
 {
+	uchar previous[16];
 	size_t i;
 	bool different;
 
-	if (!sctx->xnonce2_size || !work->xnonce2)
+	if (!sctx->xnonce2_size || sctx->xnonce2_size > sizeof(previous))
 		return;
 
+	memcpy(previous, sctx->job.xnonce2, sctx->xnonce2_size);
 	do {
 		for (i = 0; i < sctx->xnonce2_size; i += sizeof(uint32_t)) {
 			uint32_t r = mt19937_rand32();
 			size_t n = min(sizeof(r), sctx->xnonce2_size - i);
 			memcpy(sctx->job.xnonce2 + i, &r, n);
 		}
-		different = memcmp(sctx->job.xnonce2, work->xnonce2, sctx->xnonce2_size) != 0;
+		different = memcmp(sctx->job.xnonce2, previous, sctx->xnonce2_size) != 0;
 	} while (!different);
 }
 
@@ -1814,6 +1816,10 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		work->job_id = strdup(sctx->job.job_id);
 		work->xnonce2_len = sctx->xnonce2_size;
 		work->xnonce2 = (uchar*) realloc(work->xnonce2, sctx->xnonce2_size);
+
+		/* Choose the random extranonce2 before constructing the Merkle root,
+		 * so the header and the submitted extranonce2 always match. */
+		stratum_randomize_extranonce2(sctx);
 		memcpy(work->xnonce2, sctx->job.xnonce2, sctx->xnonce2_size);
 
 		/* Generate merkle root */
@@ -1850,10 +1856,6 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 			else
 				sha256d(merkle_root, merkle_root, 64);
 		}
-
-		/* Randomize extranonce2 for the next work unit. The current work
-		 * copy still contains the extranonce2 used to build its Merkle root. */
-		stratum_randomize_extranonce2(sctx, work);
 
 		/* Assemble block header */
 		memset(work->data, 0, 128);
