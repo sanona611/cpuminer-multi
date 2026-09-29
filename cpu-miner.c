@@ -243,7 +243,7 @@ int opt_maxlograte = 5;
 bool opt_randomize = false;
 bool opt_e2rand = false;
 bool opt_e2roll = false;
-int opt_e2rolltime = 5;
+int opt_e2rolltime = 1;
 bool opt_timeroll = false;
 int opt_timerolltime = 1;
 static int opt_retries = -1;
@@ -407,10 +407,10 @@ Options:\n\
                           long polling is unavailable, in seconds (default: 5)\n\
       --randomize       Randomize scan range start to reduce duplicates\n\
       --e2rand          Randomize Stratum extranonce2 using MT19937\n\
-      --e2roll          Enable periodic Stratum extranonce2 rolling\n\
-      --e2rolltime=N    Set extranonce2 roll interval in seconds (default: 5)\n\
-      --timeroll     Enable periodic Stratum ntime rolling\n\
-      --timerolltime=N Set ntime roll interval in seconds (default: 1)\n\
+      --e2roll          Enable periodic Stratum extranonce2 rolling (default: 1s)\n\
+      --e2rolltime=N    Enable E2 rolling and set interval in seconds\n\
+      --timeroll        Enable periodic Stratum ntime rolling (default: 1s)\n\
+      --timerolltime=N  Enable ntime rolling and set interval in seconds\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -3598,11 +3598,12 @@ void parse_arg(int key, char *arg)
 		opt_e2rand = true;
 		break;
 	case 1027:
-		if (atoi(optarg) > 0)
-			opt_e2rolltime = atoi(optarg);
+		opt_e2roll = true;
+		if (atoi(arg) > 0)
+			opt_e2rolltime = atoi(arg);
 		else {
-			applog(LOG_ERR, "Invalid --e2rolltime value: %s", optarg);
-			opt_e2rolltime = 5;
+			applog(LOG_ERR, "Invalid --e2rolltime value: %s", arg);
+			opt_e2rolltime = 1;
 		}
 		break;
 	case 1026:
@@ -3612,6 +3613,7 @@ void parse_arg(int key, char *arg)
 		opt_timeroll = true;
 		break;
 	case 1029:
+		opt_timeroll = true;
 		if (atoi(arg) > 0)
 			opt_timerolltime = atoi(arg);
 		else {
