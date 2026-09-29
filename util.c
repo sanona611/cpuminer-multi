@@ -1850,6 +1850,9 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 	hex2bin(sctx->job.ntime, ntime, 4);
 	sctx->job.clean = clean;
 
+	/* Start the ntime rolling interval from the latest Stratum job. */
+	sctx->last_ntime_roll = time(NULL);
+
 	sctx->job.diff = sctx->next_diff;
 
 	pthread_mutex_unlock(&sctx->work_lock);
