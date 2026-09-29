@@ -1263,6 +1263,80 @@ out:
 	return false;
 }
 
+bool stratum_configure(struct stratum_ctx *sctx)
+{
+	char *sret = NULL;
+	json_t *val = NULL, *res_val, *err_val, *vr_val, *mask_val;
+	json_error_t err;
+	bool ret = true;
+	char s[512];
+
+	if (jsonrpc_2)
+		return true;
+
+	/* Reset the negotiated state for every new connection. */
+	pthread_mutex_lock(&sctx->work_lock);
+	sctx->version_rolling = false;
+	sctx->version_mask = 0;
+	pthread_mutex_unlock(&sctx->work_lock);
+
+	/* BIP310: configure is the first message after connect. */
+	snprintf(s, sizeof(s),
+		"{\\\"id\\\":0,\\\"method\\\":\\\"mining.configure\\\",\\\"params\\\":[[\\\"version-rolling\\\"],{\\\"version-rolling.mask\\\":\\\"1fffe000\\\",\\\"version-rolling.min-bit-count\\\":2}]}\\r\\n");
+
+	if (!stratum_send_line(sctx, s))
+		return false;
+	if (!socket_full(sctx->sock, 10))
+		return false;
+
+	sret = stratum_recv_line(sctx);
+	if (!sret)
+		return false;
+
+	val = JSON_LOADS(sret, &err);
+	free(sret);
+	if (!val) {
+		if (opt_debug)
+			applog(LOG_DEBUG, "mining.configure JSON decode failed(%d): %s", err.line, err.text);
+		return false;
+	}
+
+	res_val = json_object_get(val, "result");
+	err_val = json_object_get(val, "error");
+	if (err_val && !json_is_null(err_val))
+		goto out;
+
+	vr_val = res_val ? json_object_get(res_val, "version-rolling") : NULL;
+	if (!vr_val || !json_is_true(vr_val))
+		goto out;
+
+	mask_val = json_object_get(res_val, "version-rolling.mask");
+	if (!mask_val || !json_is_string(mask_val))
+		goto out;
+
+	const char *mask_str = json_string_value(mask_val);
+	if (!mask_str || strlen(mask_str) != 8)
+		goto out;
+
+	char *end = NULL;
+	unsigned long parsed_mask = strtoul(mask_str, &end, 16);
+	if (!end || *end != '\\0' || parsed_mask > 0xffffffffUL)
+		goto out;
+
+	pthread_mutex_lock(&sctx->work_lock);
+	sctx->version_mask = (uint32_t) parsed_mask & 0x1fffe000U;
+	sctx->version_rolling = sctx->version_mask != 0;
+	pthread_mutex_unlock(&sctx->work_lock);
+
+	if (sctx->version_rolling)
+		applog(LOG_INFO, "Stratum version rolling enabled, mask=%08x", sctx->version_mask);
+
+out:
+	if (val)
+		json_decref(val);
+	return ret;
+}
+
 bool stratum_subscribe(struct stratum_ctx *sctx)
 {
 	char *s, *sret = NULL;
@@ -1786,6 +1860,27 @@ out:
 	return ret;
 }
 
+static bool stratum_set_version_mask(struct stratum_ctx *sctx, json_t *params)
+{
+	const char *mask_str = json_string_value(json_array_get(params, 0));
+	if (!mask_str || strlen(mask_str) != 8)
+		return false;
+
+	char *end = NULL;
+	unsigned long parsed_mask = strtoul(mask_str, &end, 16);
+	if (!end || *end != '\\0' || parsed_mask > 0xffffffffUL)
+		return false;
+
+	pthread_mutex_lock(&sctx->work_lock);
+	sctx->version_mask = (uint32_t) parsed_mask & 0x1fffe000U;
+	sctx->version_rolling = sctx->version_mask != 0;
+	pthread_mutex_unlock(&sctx->work_lock);
+
+	if (opt_debug)
+		applog(LOG_DEBUG, "Stratum version rolling mask updated to %08x", sctx->version_mask);
+	return true;
+}
+
 static bool stratum_set_difficulty(struct stratum_ctx *sctx, json_t *params)
 {
 	double diff;
@@ -2105,6 +2200,11 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 		ret = stratum_pong(sctx, id);
 		goto out;
 	}
+	if (!strcasecmp(method, "mining.set_version_mask")) {
+		ret = stratum_set_version_mask(sctx, params);
+		goto out;
+	}
+
 	if (!strcasecmp(method, "mining.set_difficulty")) {
 		ret = stratum_set_difficulty(sctx, params);
 		goto out;
