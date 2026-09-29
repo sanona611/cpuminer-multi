@@ -1282,7 +1282,7 @@ bool stratum_configure(struct stratum_ctx *sctx)
 
 	/* BIP310: configure is the first message after connect. */
 	snprintf(s, sizeof(s),
-		"{\\\"id\\\":0,\\\"method\\\":\\\"mining.configure\\\",\\\"params\\\":[[\\\"version-rolling\\\"],{\\\"version-rolling.mask\\\":\\\"1fffe000\\\",\\\"version-rolling.min-bit-count\\\":2}]}\\r\\n");
+		"{\"id\":0,\"method\":\"mining.configure\",\"params\":[[\"version-rolling\"],{\"version-rolling.mask\":\"1fffe000\",\"version-rolling.min-bit-count\":2}]}\r\n");
 
 	if (!stratum_send_line(sctx, s))
 		return false;
@@ -1320,7 +1320,7 @@ bool stratum_configure(struct stratum_ctx *sctx)
 
 	char *end = NULL;
 	unsigned long parsed_mask = strtoul(mask_str, &end, 16);
-	if (!end || *end != '\\0' || parsed_mask > 0xffffffffUL)
+	if (!end || *end != '\0' || parsed_mask > 0xffffffffUL)
 		goto out;
 
 	pthread_mutex_lock(&sctx->work_lock);
