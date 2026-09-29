@@ -2365,7 +2365,7 @@ static void *miner_thread(void *userdata)
 				int64_t roll_wait;
 
 				/* ntime rolling uses its configurable deadline. */
-				roll_wait = STRATUM_NTIME_ROLL_INTERVAL -
+				roll_wait = (int64_t)opt_timerolltime -
 					(int64_t)(now - stratum.last_ntime_roll);
 				if (roll_wait < 1)
 					roll_wait = 1;
@@ -2373,8 +2373,8 @@ static void *miner_thread(void *userdata)
 					max64 = roll_wait;
 
 				/* E2 rolling has its own, independently configurable deadline. */
-				if (opt_timeroll && opt_timerolltime > 0) {
-					roll_wait = (int64_t)opt_timerolltime -
+				if (opt_e2roll && opt_e2rolltime > 0) {
+					roll_wait = (int64_t)opt_e2rolltime -
 						(int64_t)(now - stratum.last_extranonce2_roll);
 					if (roll_wait < 1)
 						roll_wait = 1;
