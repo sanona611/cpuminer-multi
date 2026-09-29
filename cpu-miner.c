@@ -1839,6 +1839,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		work_copy(work, &sctx->work);
 		pthread_mutex_unlock(&sctx->work_lock);
 	} else {
+		sctx->last_ntime_roll = time(NULL);
 		free(work->job_id);
 		work->job_id = strdup(sctx->job.job_id);
 		work->xnonce2_len = sctx->xnonce2_size;
@@ -2160,6 +2161,7 @@ static void *miner_thread(void *userdata)
 		struct timeval tv_start, tv_end, diff;
 		int64_t max64;
 		bool regen_work = false;
+		bool rolled_ntime = false;
 		int wkcmp_offset = 0;
 		int nonce_oft = 19*sizeof(uint32_t); // 76
 		int wkcmp_sz = nonce_oft;
@@ -2201,8 +2203,11 @@ static void *miner_thread(void *userdata)
 			/* Roll ntime without rebuilding the coinbase/merkle root. Only
 			 * thread 0 performs the update; other threads pick up g_work below. */
 			if (thr_id == 0 && opt_algo != ALGO_DECRED && opt_algo != ALGO_LBRY &&
-				opt_algo != ALGO_SIA)
-				regen_work = stratum_roll_ntime(&stratum, &g_work) || regen_work;
+				opt_algo != ALGO_SIA) {
+				rolled_ntime = stratum_roll_ntime(&stratum, &g_work);
+				if (rolled_ntime)
+					restart_threads();
+			}
 
 			// to clean: is g_work loaded before the memcmp ?
 			regen_work = regen_work || ( (*nonceptr) >= end_nonce
