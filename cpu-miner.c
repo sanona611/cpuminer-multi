@@ -1797,6 +1797,35 @@ static void stratum_randomize_extranonce2(struct stratum_ctx *sctx)
 	} while (!different);
 }
 
+#define STRATUM_NTIME_ROLL_INTERVAL 30
+
+/* Roll ntime forward for standard Bitcoin-style Stratum jobs. */
+static bool stratum_roll_ntime(struct stratum_ctx *sctx, struct work *work)
+{
+	time_t now = time(NULL);
+	uint32_t job_ntime = le32dec(sctx->job.ntime);
+	uint32_t current_ntime = work->data[17];
+	uint32_t rolled_ntime;
+
+	if (now <= sctx->last_ntime_roll ||
+		now - sctx->last_ntime_roll < STRATUM_NTIME_ROLL_INTERVAL)
+		return false;
+
+	rolled_ntime = (uint32_t) now;
+	if (rolled_ntime < job_ntime)
+		rolled_ntime = job_ntime;
+	if (rolled_ntime <= current_ntime)
+		return false;
+
+	work->data[17] = rolled_ntime;
+	sctx->last_ntime_roll = now;
+
+	if (opt_debug)
+		applog(LOG_DEBUG, "Stratum rolled ntime=%08x", rolled_ntime);
+
+	return true;
+}
+
 static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 {
 	uint32_t extraheader[32] = { 0 };
@@ -1861,9 +1890,17 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		work->version_bits = 0;
 		if (sctx->version_rolling && sctx->version_mask) {
 			work->version_bits = mt19937_rand32() & sctx->version_mask;
-			work->data[0] = (work->data[0] & ~sctx->version_mask) | work->version_bits;
+
+			/* BIP310 mask/bits are in wire byte order, while work->data[0]
+			 * uses cpuminer's little-endian internal representation. */
+			uint32_t internal_mask = swab32(sctx->version_mask);
+			uint32_t internal_bits = swab32(work->version_bits);
+			work->data[0] = (work->data[0] & ~internal_mask) |
+				(internal_bits & internal_mask);
+
 			if (opt_debug)
-				applog(LOG_DEBUG, "Stratum rolled version bits=%08x", work->version_bits);
+				applog(LOG_DEBUG, "Stratum rolled version bits=%08x internal=%08x",
+					work->version_bits, work->data[0]);
 		}
 		for (i = 0; i < 8; i++)
 			work->data[1 + i] = le32dec((uint32_t *) sctx->job.prevhash + i);
@@ -2160,6 +2197,12 @@ static void *miner_thread(void *userdata)
 			}
 
 			pthread_mutex_lock(&g_work_lock);
+
+			/* Roll ntime without rebuilding the coinbase/merkle root. Only
+			 * thread 0 performs the update; other threads pick up g_work below. */
+			if (thr_id == 0 && opt_algo != ALGO_DECRED && opt_algo != ALGO_LBRY &&
+				opt_algo != ALGO_SIA)
+				regen_work = stratum_roll_ntime(&stratum, &g_work) || regen_work;
 
 			// to clean: is g_work loaded before the memcmp ?
 			regen_work = regen_work || ( (*nonceptr) >= end_nonce
