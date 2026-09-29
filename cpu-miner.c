@@ -241,8 +241,9 @@ static bool opt_background = false;
 bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
-bool opt_e2randomize = false;
+bool opt_e2rand = false;
 bool opt_e2roll = false;
+int opt_e2rolltime = 5;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
@@ -485,7 +486,8 @@ static struct option const options[] = {
 	{ "retries", 1, NULL, 'r' },
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
-	{ "e2randomize", 0, NULL, 1025 },
+	{ "e2rand", 0, NULL, 1025 },
+	{ "e2rolltime", 1, NULL, 1027 },
 	{ "e2roll", 0, NULL, 1026 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
@@ -1859,7 +1861,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 
 		/* Choose extranonce2 before constructing the Merkle root, so the
 		 * header and the submitted extranonce2 always match. */
-		if (opt_e2randomize) {
+		if (opt_e2rand) {
 			stratum_randomize_extranonce2(sctx);
 		} else {
 			for (size_t t = 0;
@@ -2042,8 +2044,6 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		}
 	}
 }
-#define STRATUM_EXTRANONCE2_ROLL_INTERVAL 5
-
 /* Roll extranonce2 periodically without resetting the current ntime/version. */
 static bool stratum_roll_extranonce2(struct stratum_ctx *sctx, struct work *work)
 {
@@ -2057,7 +2057,7 @@ static bool stratum_roll_extranonce2(struct stratum_ctx *sctx, struct work *work
 		return false;
 
 	if (now <= sctx->last_extranonce2_roll ||
-	    now - sctx->last_extranonce2_roll < STRATUM_EXTRANONCE2_ROLL_INTERVAL)
+	    now - sctx->last_extranonce2_roll < opt_e2rolltime)
 		return false;
 
 	current_ntime = work->data[17];
@@ -3534,7 +3534,15 @@ void parse_arg(int key, char *arg)
 		opt_randomize = true;
 		break;
 	case 1025:
-		opt_e2randomize = true;
+		opt_e2rand = true;
+		break;
+	case 1027:
+		if (atoi(optarg) > 0)
+			opt_e2rolltime = atoi(optarg);
+		else {
+			applog(LOG_ERR, "Invalid --e2rolltime value: %s", optarg);
+			return 1;
+		}
 		break;
 	case 1026:
 		opt_e2roll = true;
