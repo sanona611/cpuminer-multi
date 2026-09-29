@@ -451,6 +451,7 @@ struct stratum_ctx {
 	/* BIP310 Stratum version rolling state. */
 	bool version_rolling;
 	uint32_t version_mask;
+	time_t last_ntime_roll;
 
 	char *session_id;
 	size_t xnonce1_size;
