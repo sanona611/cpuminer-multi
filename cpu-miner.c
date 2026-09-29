@@ -1839,7 +1839,6 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		work_copy(work, &sctx->work);
 		pthread_mutex_unlock(&sctx->work_lock);
 	} else {
-		sctx->last_ntime_roll = time(NULL);
 		free(work->job_id);
 		work->job_id = strdup(sctx->job.job_id);
 		work->xnonce2_len = sctx->xnonce2_size;
