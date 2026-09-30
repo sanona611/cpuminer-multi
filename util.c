@@ -1450,7 +1450,7 @@ bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
 	return stratum_vroll_update_locked_ex(sctx, work, false);
 }
 
-static bool stratum_vroll_force_update_locked(struct stratum_ctx *sctx, struct work *work)
+bool stratum_vroll_force_update_locked(struct stratum_ctx *sctx, struct work *work)
 {
 	return stratum_vroll_update_locked_ex(sctx, work, true);
 }
