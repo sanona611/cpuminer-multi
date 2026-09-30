@@ -2199,6 +2199,7 @@ static void *miner_thread(void *userdata)
 		}
 
 		uint32_t *nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
+		bool nonce_exhausted_now = nonce_initialized && *nonceptr >= end_nonce;
 
 		if (have_stratum) {
 			while (!jsonrpc_2 && time(NULL) >= g_work_time + 120)
@@ -2211,13 +2212,17 @@ static void *miner_thread(void *userdata)
 
 			pthread_mutex_lock(&g_work_lock);
 
-			if (opt_vroll && stratum.version_rolling && stratum_vroll_due(&stratum)) {
-				if (stratum_vroll_update(&stratum, &g_work))
+			if (opt_vroll && stratum.version_rolling &&
+			    (nonce_exhausted_now || stratum_vroll_due(&stratum))) {
+				bool rolled = nonce_exhausted_now
+					? stratum_vroll_force_update_locked(&stratum, &g_work)
+					: stratum_vroll_update(&stratum, &g_work);
+				if (rolled)
 					restart_threads();
 			}
 
 			// to clean: is g_work loaded before the memcmp ?
-			regen_work = regen_work || ( (*nonceptr) >= end_nonce
+			regen_work = regen_work || ( nonce_exhausted_now
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
 			if (regen_work) {
