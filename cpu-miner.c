@@ -1321,11 +1321,16 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				xnonce2str = abin2hex(work->xnonce2, work->xnonce2_len);
 			}
 			if (opt_vroll && stratum.version_rolling) {
+				if (opt_debug)
+					applog(LOG_DEBUG,
+						"SUBMIT: job_id='%s' ntime=%08x nonce=%08x version_bits=%08x header_version=%08x",
+						work->job_id, swab32(work->data[17]), swab32(work->data[19]),
+						work->version_bits, work->data[0]);
 				snprintf(s, JSON_BUF_LEN,
 					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%08x\"], \"id\":4}",
 					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr,
-					work->data[0] & stratum.version_mask);
-			} else {
+					work->version_bits);
+			} else { {
 				snprintf(s, JSON_BUF_LEN,
 					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":4}",
 					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr);
@@ -1906,6 +1911,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		/* Assemble block header */
 		memset(work->data, 0, 128);
 		work->data[0] = le32dec(sctx->job.version);
+		work->version_bits = 0;
 		if (opt_vroll && sctx->version_rolling)
 			stratum_vroll_update_locked(sctx, work);
 		for (i = 0; i < 8; i++)
