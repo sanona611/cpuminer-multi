@@ -1402,7 +1402,7 @@ bool stratum_vroll_due(struct stratum_ctx *sctx)
 	return time(NULL) >= sctx->vroll_last + opt_vroll_interval;
 }
 
-bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
+static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work *work, bool force)
 {
 	uint32_t base;
 	uint32_t internal_mask;
@@ -1416,7 +1416,8 @@ bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
 	internal_mask = swab32(sctx->version_mask);
 	now = time(NULL);
 
-	if (!sctx->rolled_version ||
+	if (force ||
+	    !sctx->rolled_version ||
 	    sctx->vroll_block_height != sctx->bloc_height ||
 	    (sctx->rolled_version & ~internal_mask) != (base & ~internal_mask) ||
 	    (opt_vroll_interval > 0 && now >= sctx->vroll_last + opt_vroll_interval)) {
@@ -1431,7 +1432,8 @@ bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
 		if (opt_debug)
 			applog(LOG_DEBUG, "Stratum rolled version=%08x bits=%08x mask=%08x%s",
 				sctx->rolled_version, bits, sctx->version_mask,
-				opt_vroll_interval > 0 ? " (timed)" : " (new block)");
+				force ? " (nonce exhausted)" :
+				(opt_vroll_interval > 0 ? " (timed)" : " (new block)"));
 		if (work)
 			work->version_bits = bits;
 	}
@@ -1441,6 +1443,16 @@ bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
 		work->data[0] = sctx->rolled_version;
 	}
 	return change;
+}
+
+bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
+{
+	return stratum_vroll_update_locked_ex(sctx, work, false);
+}
+
+static bool stratum_vroll_force_update_locked(struct stratum_ctx *sctx, struct work *work)
+{
+	return stratum_vroll_update_locked_ex(sctx, work, true);
 }
 
 bool stratum_vroll_update(struct stratum_ctx *sctx, struct work *work)
@@ -1488,6 +1500,7 @@ bool stratum_configure_version_rolling(struct stratum_ctx *sctx)
 
 	sctx->version_rolling = true;
 	sctx->version_mask = (uint32_t)mask;
+	vroll_mt_seed((uint32_t)time(NULL) ^ (uint32_t)(uintptr_t)sctx);
 	sctx->rolled_version = 0;
 	sctx->vroll_last = 0;
 	sctx->vroll_block_height = -1;
