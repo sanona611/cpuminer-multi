@@ -2227,7 +2227,7 @@ static void *miner_thread(void *userdata)
 		{
 			uint32_t old_nonce = *nonceptr;
 			bool nonce_exhausted = nonce_initialized && old_nonce >= end_nonce;
-			const char *old_job_id = work.job_id ? work.job_id : "";
+			bool had_old_job = work.job_id && work.job_id[0];
 			const char *new_job_id = g_work.job_id ? g_work.job_id : "";
 
 			work_free(&work);
@@ -2243,7 +2243,7 @@ static void *miner_thread(void *userdata)
 					applog(LOG_DEBUG,
 						"NONCE RESET: thr=%d job=%s nonce=%08x%s",
 						thr_id, new_job_id, *nonceptr,
-						old_job_id[0] ? " (new job)" : " (initial)");
+						had_old_job ? " (new job)" : " (initial)");
 			} else {
 				*nonceptr = old_nonce;
 				if (opt_debug)
