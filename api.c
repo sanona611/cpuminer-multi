@@ -521,7 +521,11 @@ static void api()
 	time_t bindstart;
 	struct sockaddr_in serv;
 	struct sockaddr_in cli;
+#ifdef WIN32
+	int clisiz;
+#else
 	socklen_t clisiz;
+#endif
 	bool addrok = false;
 	long long counter;
 	char *result;
