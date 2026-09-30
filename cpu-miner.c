@@ -1330,7 +1330,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%08x\"], \"id\":4}",
 					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr,
 					work->version_bits);
-			} else { {
+			} else {
 				snprintf(s, JSON_BUF_LEN,
 					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":4}",
 					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr);
