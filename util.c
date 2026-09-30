@@ -1414,6 +1414,7 @@ bool stratum_vroll_due(struct stratum_ctx *sctx)
 bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
 {
 	uint32_t base;
+	uint32_t internal_mask;
 	time_t now;
 	bool change = false;
 
@@ -1421,23 +1422,33 @@ bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
 		return false;
 
 	base = le32dec(sctx->job.version);
+	internal_mask = swab32(sctx->version_mask);
 	now = time(NULL);
 
 	if (!sctx->rolled_version ||
 	    sctx->vroll_block_height != sctx->bloc_height ||
-	    (sctx->rolled_version & ~sctx->version_mask) != (base & ~sctx->version_mask) ||
+	    (sctx->rolled_version & ~internal_mask) != (base & ~internal_mask) ||
 	    (opt_vroll_interval > 0 && now >= sctx->vroll_last + opt_vroll_interval)) {
-		sctx->rolled_version = vroll_make_version(sctx, base);
+		uint32_t bits = vroll_mt_rand() & sctx->version_mask;
+		uint32_t internal_bits = swab32(bits);
+
+		sctx->rolled_version = (base & ~internal_mask) |
+			(internal_bits & internal_mask);
 		sctx->vroll_last = now;
 		sctx->vroll_block_height = sctx->bloc_height;
 		change = true;
 		if (opt_debug)
-			applog(LOG_DEBUG, "Stratum rolled version=%08x mask=%08x%s",
-				sctx->rolled_version, sctx->version_mask,
+			applog(LOG_DEBUG, "Stratum rolled version=%08x bits=%08x mask=%08x%s",
+				sctx->rolled_version, bits, sctx->version_mask,
 				opt_vroll_interval > 0 ? " (timed)" : " (new block)");
+		if (work)
+			work->version_bits = bits;
 	}
-	if (work)
+	if (work) {
+		if (!change)
+			work->version_bits = swab32(sctx->rolled_version & internal_mask);
 		work->data[0] = sctx->rolled_version;
+	}
 	return change;
 }
 
