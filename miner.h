@@ -413,6 +413,7 @@ struct work {
 	char *workid;
 
 	char *job_id;
+	int thr_id;
 	size_t xnonce2_len;
 	unsigned char *xnonce2;
 };

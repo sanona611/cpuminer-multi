@@ -227,6 +227,7 @@ bool opt_benchmark = false;
 bool opt_redirect = true;
 bool opt_showdiff = true;
 bool opt_extranonce = true;
+bool opt_shareinfo = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool have_gbt = true;
@@ -416,6 +417,7 @@ Options:\n\
   -q, --quiet           disable per-thread hashmeter output\n\
       --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
+      --shareinfo       show accepted share thread/nonce/E1/E2/time/version info\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n\
       --hide-diff       Hide submitted block and net difficulty\n"
 #ifdef HAVE_SYSLOG_H
@@ -460,6 +462,7 @@ static struct option const options[] = {
 	{ "cpu-priority", 1, NULL, 1021 },
 	{ "no-color", 0, NULL, 1002 },
 	{ "debug", 0, NULL, 'D' },
+	{ "shareinfo", 0, NULL, 1063 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
 	{ "diff-multiplier", 1, NULL, 'm' },
@@ -504,6 +507,20 @@ static time_t g_work_time = 0;
 static pthread_mutex_t g_work_lock;
 static bool submit_old = false;
 static char *lp_id;
+
+struct shareinfo_entry {
+	int thr_id;
+	uint32_t nonce;
+	uint32_t ntime;
+	uint32_t version;
+	char e1[129];
+	char e2[129];
+	struct shareinfo_entry *next;
+};
+
+static pthread_mutex_t shareinfo_lock;
+static struct shareinfo_entry *shareinfo_head = NULL;
+static struct shareinfo_entry *shareinfo_tail = NULL;
 
 static void workio_cmd_free(struct workio_cmd *wc);
 
@@ -1057,14 +1074,104 @@ out:
 #define YAY "yay!!!"
 #define BOO "booooo"
 
+static void shareinfo_get_time_nonce(const struct work *work, uint32_t *ntime, uint32_t *nonce)
+{
+	switch (opt_algo) {
+	case ALGO_DECRED:
+		be32enc(ntime, work->data[34]);
+		be32enc(nonce, work->data[35]);
+		break;
+	case ALGO_LBRY:
+		le32enc(ntime, work->data[25]);
+		le32enc(nonce, work->data[27]);
+		break;
+	case ALGO_DROP:
+	case ALGO_NEOSCRYPT:
+	case ALGO_ZR5:
+		be32enc(ntime, work->data[17]);
+		be32enc(nonce, work->data[19]);
+		break;
+	case ALGO_SIA:
+		be32enc(ntime, work->data[10]);
+		be32enc(nonce, work->data[8]);
+		break;
+	default:
+		le32enc(ntime, work->data[17]);
+		le32enc(nonce, work->data[19]);
+		break;
+	}
+}
+
+static void shareinfo_push(const struct work *work)
+{
+	struct shareinfo_entry *entry;
+
+	if (!opt_shareinfo || !have_stratum || !work)
+		return;
+
+	entry = (struct shareinfo_entry *) calloc(1, sizeof(*entry));
+	if (!entry)
+		return;
+
+	entry->thr_id = work->thr_id;
+	entry->version = work->data[0];
+	shareinfo_get_time_nonce(work, &entry->ntime, &entry->nonce);
+
+	if (stratum.xnonce1 && stratum.xnonce1_size)
+		bin2hex(entry->e1, stratum.xnonce1, stratum.xnonce1_size);
+	if (work->xnonce2 && work->xnonce2_len)
+		bin2hex(entry->e2, work->xnonce2, work->xnonce2_len);
+
+	pthread_mutex_lock(&shareinfo_lock);
+	if (shareinfo_tail)
+		shareinfo_tail->next = entry;
+	else
+		shareinfo_head = entry;
+	shareinfo_tail = entry;
+	pthread_mutex_unlock(&shareinfo_lock);
+}
+
+static struct shareinfo_entry *shareinfo_pop(void)
+{
+	struct shareinfo_entry *entry = NULL;
+
+	pthread_mutex_lock(&shareinfo_lock);
+	if (shareinfo_head) {
+		entry = shareinfo_head;
+		shareinfo_head = entry->next;
+		if (!shareinfo_head)
+			shareinfo_tail = NULL;
+	}
+	pthread_mutex_unlock(&shareinfo_lock);
+
+	return entry;
+}
+
+static void shareinfo_free(struct shareinfo_entry *entry)
+{
+	free(entry);
+}
+
 static int share_result(int result, struct work *work, const char *reason)
 {
+	struct shareinfo_entry *shareinfo = NULL;
 	const char *flag;
 	char suppl[32] = { 0 };
 	char s[345];
+	char shareinfo_suffix[300] = { 0 };
 	double hashrate;
 	double sharediff = work ? work->sharediff : stratum.sharediff;
 	int i;
+
+	if (opt_shareinfo && have_stratum && !work)
+		shareinfo = shareinfo_pop();
+
+	if (opt_shareinfo && result && shareinfo) {
+		snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
+			"\t<thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
+			shareinfo->thr_id, shareinfo->nonce, shareinfo->e1, shareinfo->e2,
+			shareinfo->ntime, shareinfo->version);
+	}
 
 	hashrate = 0.;
 	pthread_mutex_lock(&stats_lock);
@@ -1088,7 +1195,7 @@ static int share_result(int result, struct work *work, const char *reason)
 
 	if (opt_showdiff)
 		sprintf(suppl, "diff %.3f", sharediff);
-	else // accepted percent
+	else
 		sprintf(suppl, "%.2f%%", 100. * accepted_count / (accepted_count + rejected_count));
 
 	switch (opt_algo) {
@@ -1098,17 +1205,20 @@ static int share_result(int result, struct work *work, const char *reason)
 	case ALGO_PLUCK:
 	case ALGO_SCRYPTJANE:
 		sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", hashrate);
-		applog(LOG_NOTICE, "accepted: %lu/%lu (%s), %s H/s %s",
+		applog(LOG_NOTICE, "accepted: %lu/%lu (%s), %s H/s %s%s",
 			accepted_count, accepted_count + rejected_count,
-			suppl, s, flag);
+			suppl, s, flag, shareinfo_suffix);
 		break;
 	default:
 		sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", hashrate / 1000.0);
-		applog(LOG_NOTICE, "accepted: %lu/%lu (%s), %s kH/s %s",
+		applog(LOG_NOTICE, "accepted: %lu/%lu (%s), %s kH/s %s%s",
 			accepted_count, accepted_count + rejected_count,
-			suppl, s, flag);
+			suppl, s, flag, shareinfo_suffix);
 		break;
 	}
+
+	if (shareinfo)
+		shareinfo_free(shareinfo);
 
 	if (reason) {
 		applog(LOG_WARNING, "reject reason: %s", reason);
@@ -1220,6 +1330,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			applog(LOG_ERR, "submit_upstream_work stratum_send_line failed");
 			goto out;
 		}
+
+		shareinfo_push(work);
 
 	} else if (work->txs) { /* gbt */
 
@@ -1710,6 +1822,7 @@ static bool submit_work(struct thr_info *thr, const struct work *work_in)
 	wc->cmd = WC_SUBMIT_WORK;
 	wc->thr = thr;
 	work_copy(wc->u.work, work_in);
+	wc->u.work->thr_id = thr->id;
 
 	/* send solution to workio thread */
 	if (!tq_push(thr_info[work_thr_id].q, wc))
@@ -3255,6 +3368,9 @@ void parse_arg(int key, char *arg)
 	case 1012:
 		opt_extranonce = false;
 		break;
+	case 1063:
+		opt_shareinfo = true;
+		break;
 	case 1013:
 		opt_showdiff = true;
 		break;
@@ -3533,6 +3649,7 @@ int main(int argc, char *argv[]) {
 	pthread_mutex_init(&g_work_lock, NULL);
 	pthread_mutex_init(&rpc2_job_lock, NULL);
 	pthread_mutex_init(&rpc2_login_lock, NULL);
+	pthread_mutex_init(&shareinfo_lock, NULL);
 	pthread_mutex_init(&stratum.sock_lock, NULL);
 	pthread_mutex_init(&stratum.work_lock, NULL);
 
