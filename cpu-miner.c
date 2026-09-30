@@ -2369,8 +2369,7 @@ static void *miner_thread(void *userdata)
 			work_free(&work);
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-			*nonceptr = (0xffffffffU / opt_n_threads * thr_id) + mt19937_rand32() % (0xffffffffU / opt_n_threads);
-			end_nonce = (*nonceptr) + ((int64_t) thr_hashrates[thr_id]);
+			*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
 			if (opt_randomize)
 				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
 		} else
