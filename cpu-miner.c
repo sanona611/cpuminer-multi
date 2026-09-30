@@ -1906,6 +1906,8 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		/* Assemble block header */
 		memset(work->data, 0, 128);
 		work->data[0] = le32dec(sctx->job.version);
+		if (opt_vroll && sctx->version_rolling)
+			stratum_vroll_update_locked(sctx, work);
 		for (i = 0; i < 8; i++)
 			work->data[1 + i] = le32dec((uint32_t *) sctx->job.prevhash + i);
 		for (i = 0; i < 8; i++)
