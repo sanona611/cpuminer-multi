@@ -1421,7 +1421,10 @@ static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work
 	    sctx->vroll_block_height != sctx->bloc_height ||
 	    (sctx->rolled_version & ~internal_mask) != (base & ~internal_mask) ||
 	    (opt_vroll_interval > 0 && now >= sctx->vroll_last + opt_vroll_interval)) {
-		uint32_t bits = vroll_mt_rand() & sctx->version_mask;
+		uint32_t bits;
+		do {
+			bits = vroll_mt_rand() & sctx->version_mask;
+		} while (!bits && sctx->version_mask);
 		uint32_t internal_bits = swab32(bits);
 
 		sctx->rolled_version = (base & ~internal_mask) |
