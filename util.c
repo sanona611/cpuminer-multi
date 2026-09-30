@@ -45,6 +45,8 @@
 #include "elist.h"
 
 extern pthread_mutex_t stats_lock;
+extern bool opt_vroll;
+extern int opt_vroll_interval;
 
 struct data_buffer {
 	void		*buf;
@@ -1355,6 +1357,149 @@ out:
 
 extern bool opt_extranonce;
 
+#define VROLL_MASK 0x1fffe000U
+
+static uint32_t vroll_mt[624];
+static int vroll_mt_index = 624;
+
+static void vroll_mt_seed(uint32_t seed)
+{
+	int i;
+	vroll_mt[0] = seed;
+	for (i = 1; i < 624; i++)
+		vroll_mt[i] = 1812433253U * (vroll_mt[i - 1] ^ (vroll_mt[i - 1] >> 30)) + (uint32_t)i;
+	vroll_mt_index = 624;
+}
+
+static uint32_t vroll_mt_rand(void)
+{
+	int i;
+	uint32_t y;
+
+	if (vroll_mt_index >= 624) {
+		for (i = 0; i < 624; i++) {
+			y = (vroll_mt[i] & 0x80000000U) |
+			    (vroll_mt[(i + 1) % 624] & 0x7fffffffU);
+			vroll_mt[i] = vroll_mt[(i + 397) % 624] ^ (y >> 1);
+			if (y & 1U)
+				vroll_mt[i] ^= 0x9908b0dfU;
+		}
+		vroll_mt_index = 0;
+	}
+	y = vroll_mt[vroll_mt_index++];
+	y ^= y >> 11;
+	y ^= (y << 7) & 0x9d2c5680U;
+	y ^= (y << 15) & 0xefc60000U;
+	y ^= y >> 18;
+	return y;
+}
+
+static uint32_t vroll_make_version(struct stratum_ctx *sctx, uint32_t base)
+{
+	static bool seeded = false;
+	if (!seeded) {
+		vroll_mt_seed((uint32_t)time(NULL) ^ (uint32_t)(uintptr_t)sctx);
+		seeded = true;
+	}
+	return (base & ~sctx->version_mask) | (vroll_mt_rand() & sctx->version_mask);
+}
+
+bool stratum_vroll_due(struct stratum_ctx *sctx)
+{
+	if (!opt_vroll || !sctx->version_rolling || opt_vroll_interval <= 0)
+		return false;
+	return time(NULL) >= sctx->vroll_last + opt_vroll_interval;
+}
+
+bool stratum_vroll_update(struct stratum_ctx *sctx, struct work *work)
+{
+	uint32_t base;
+	time_t now;
+	bool change = false;
+
+	if (!opt_vroll || !sctx->version_rolling)
+		return false;
+
+	pthread_mutex_lock(&sctx->work_lock);
+	base = le32dec(sctx->job.version);
+	now = time(NULL);
+
+	if (!sctx->rolled_version ||
+	    sctx->vroll_block_height != sctx->bloc_height ||
+	    (sctx->rolled_version & ~sctx->version_mask) != (base & ~sctx->version_mask) ||
+	    (opt_vroll_interval > 0 && now >= sctx->vroll_last + opt_vroll_interval)) {
+		sctx->rolled_version = vroll_make_version(sctx, base);
+		sctx->vroll_last = now;
+		sctx->vroll_block_height = sctx->bloc_height;
+		change = true;
+		if (opt_debug)
+			applog(LOG_DEBUG, "Stratum rolled version=%08x mask=%08x%s",
+				sctx->rolled_version, sctx->version_mask,
+				opt_vroll_interval > 0 ? " (timed)" : " (new block)");
+	}
+	if (work)
+		work->data[0] = sctx->rolled_version;
+	pthread_mutex_unlock(&sctx->work_lock);
+	return change;
+}
+
+bool stratum_configure_version_rolling(struct stratum_ctx *sctx)
+{
+	char *s = NULL, *sret = NULL;
+	json_t *val = NULL, *res = NULL, *enabled = NULL, *maskval = NULL;
+	json_error_t err;
+	unsigned long mask;
+
+	if (!opt_vroll)
+		return true;
+
+	s = strdup("{\"id\":1,\"method\":\"mining.configure\",\"params\":[[\"version-rolling\"],{\"version-rolling.mask\":\"1fffe000\",\"version-rolling.min-bit-count\":2}]}");
+	if (!s || !stratum_send_line(sctx, s))
+		goto unsupported;
+
+	if (!socket_full(sctx->sock, 10))
+		goto unsupported;
+	sret = stratum_recv_line(sctx);
+	if (!sret)
+		goto unsupported;
+
+	val = JSON_LOADS(sret, &err);
+	if (!val)
+		goto unsupported;
+
+	res = json_object_get(val, "result");
+	enabled = res ? json_object_get(res, "version-rolling") : NULL;
+	maskval = res ? json_object_get(res, "version-rolling.mask") : NULL;
+	if (!enabled || !json_is_true(enabled) || !maskval || !json_is_string(maskval))
+		goto unsupported;
+
+	mask = strtoul(json_string_value(maskval), NULL, 16);
+	if (!mask)
+		goto unsupported;
+
+	sctx->version_rolling = true;
+	sctx->version_mask = (uint32_t)mask;
+	sctx->rolled_version = 0;
+	sctx->vroll_last = 0;
+	sctx->vroll_block_height = -1;
+	applog(LOG_NOTICE, "Stratum version rolling enabled, mask=%08x", sctx->version_mask);
+
+	free(s);
+	free(sret);
+	if (val) json_decref(val);
+	return true;
+
+unsupported:
+	if (opt_debug)
+		applog(LOG_WARNING, "Stratum version rolling not supported by pool; continuing without it");
+	free(s);
+	free(sret);
+	if (val) json_decref(val);
+	sctx->version_rolling = false;
+	sctx->version_mask = 0;
+	return true;
+}
+
 bool stratum_authorize(struct stratum_ctx *sctx, const char *user, const char *pass)
 {
 	json_t *val = NULL, *res_val, *err_val;
@@ -2111,6 +2256,20 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 	}
 	if (!strcasecmp(method, "mining.set_extranonce")) {
 		ret = stratum_parse_extranonce(sctx, params, 0);
+		goto out;
+	}
+	if (!strcasecmp(method, "mining.set_version_mask")) {
+		const char *maskstr = json_string_value(json_array_get(params, 0));
+		if (maskstr) {
+			unsigned long mask = strtoul(maskstr, NULL, 16);
+			pthread_mutex_lock(&sctx->work_lock);
+			sctx->version_mask = (uint32_t)mask;
+			sctx->rolled_version = 0;
+			pthread_mutex_unlock(&sctx->work_lock);
+			if (opt_debug)
+				applog(LOG_DEBUG, "Stratum version mask changed to %08x", (uint32_t)mask);
+			ret = true;
+		}
 		goto out;
 	}
 	if (!strcasecmp(method, "client.reconnect")) {
