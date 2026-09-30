@@ -465,7 +465,7 @@ static struct option const options[] = {
 	{ "no-color", 0, NULL, 1002 },
 	{ "debug", 0, NULL, 'D' },
 	{ "shareinfo", 0, NULL, 1063 },
-	{ "vroll", 0, NULL, 1064 },
+	{ "vroll", 2, NULL, 1064 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
 	{ "diff-multiplier", 1, NULL, 'm' },
