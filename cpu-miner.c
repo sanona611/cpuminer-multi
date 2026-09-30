@@ -228,6 +228,8 @@ bool opt_redirect = true;
 bool opt_showdiff = true;
 bool opt_extranonce = true;
 bool opt_shareinfo = false;
+bool opt_vroll = false;
+int opt_vroll_interval = 0;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool have_gbt = true;
@@ -463,6 +465,7 @@ static struct option const options[] = {
 	{ "no-color", 0, NULL, 1002 },
 	{ "debug", 0, NULL, 'D' },
 	{ "shareinfo", 0, NULL, 1063 },
+	{ "vroll", 0, NULL, 1064 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
 	{ "diff-multiplier", 1, NULL, 'm' },
@@ -2193,6 +2196,13 @@ static void *miner_thread(void *userdata)
 
 			pthread_mutex_lock(&g_work_lock);
 
+			if (opt_vroll && stratum.version_rolling && stratum_vroll_due(&stratum)) {
+				if (stratum_vroll_update(&stratum, &g_work)) {
+					restart_threads();
+					regen_work = true;
+				}
+			}
+
 			// to clean: is g_work loaded before the memcmp ?
 			regen_work = regen_work || ( (*nonceptr) >= end_nonce
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
@@ -3394,6 +3404,15 @@ void parse_arg(int key, char *arg)
 	case 1063:
 		opt_shareinfo = true;
 		break;
+	case 1064:
+		opt_vroll = true;
+		opt_vroll_interval = 0;
+		if (arg && *arg) {
+			v = atoi(arg);
+			if (v < 0) show_usage_and_exit(1);
+			opt_vroll_interval = v;
+		}
+		break;
 	case 1013:
 		opt_showdiff = true;
 		break;
@@ -3532,6 +3551,11 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
+		if (key == 1064 && optind < argc && argv[optind][0] != '-' &&
+		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
+			parse_arg(key, argv[optind]);
+			optind++;
+		}
 	}
 	if (optind < argc) {
 		fprintf(stderr, "%s: unsupported non-option argument -- '%s'\n",
