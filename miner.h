@@ -453,6 +453,15 @@ struct stratum_ctx {
 	double next_diff;
 	double sharediff;
 
+	/* Share submission metadata for --shareinfo. */
+	bool shareinfo_valid;
+	int shareinfo_thr_id;
+	char shareinfo_nonce[9];
+	char shareinfo_e1[257];
+	char shareinfo_e2[257];
+	char shareinfo_time[9];
+	char shareinfo_ver[9];
+
 	/* BIP310 Stratum version rolling state. */
 	bool version_rolling;
 	uint32_t version_mask;
