@@ -1320,9 +1320,16 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			} else {
 				xnonce2str = abin2hex(work->xnonce2, work->xnonce2_len);
 			}
-			snprintf(s, JSON_BUF_LEN,
+			if (opt_vroll && stratum.version_rolling) {
+				snprintf(s, JSON_BUF_LEN,
+					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%08x\"], \"id\":4}",
+					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr,
+					work->data[0] & stratum.version_mask);
+			} else {
+				snprintf(s, JSON_BUF_LEN,
 					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":4}",
 					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr);
+			}
 			free(xnonce2str);
 		}
 
