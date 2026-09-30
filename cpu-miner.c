@@ -2180,6 +2180,7 @@ static void *miner_thread(void *userdata)
 		}
 
 		uint32_t *nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
+		bool nonce_initialized = false;
 
 		if (have_stratum) {
 			while (!jsonrpc_2 && time(NULL) >= g_work_time + 120)
@@ -2224,14 +2225,36 @@ static void *miner_thread(void *userdata)
 		if (memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 			jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0)
 		{
+			uint32_t old_nonce = *nonceptr;
+			bool nonce_exhausted = nonce_initialized && old_nonce >= end_nonce;
+			const char *old_job_id = work.job_id ? work.job_id : "";
+			const char *new_job_id = g_work.job_id ? g_work.job_id : "";
+
 			work_free(&work);
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-			*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
-			if (opt_randomize)
-				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
-		} else
+
+			if (!nonce_initialized || nonce_exhausted) {
+				*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
+				if (opt_randomize)
+					nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
+				nonce_initialized = true;
+				if (opt_debug)
+					applog(LOG_DEBUG,
+						"NONCE RESET: thr=%d job=%s nonce=%08x%s",
+						thr_id, new_job_id, *nonceptr,
+						old_job_id[0] ? " (new job)" : " (initial)");
+			} else {
+				*nonceptr = old_nonce;
+				if (opt_debug)
+					applog(LOG_DEBUG,
+						"NONCE CONTINUE: thr=%d job=%s nonce=%08x",
+						thr_id, new_job_id, *nonceptr);
+			}
+		} else {
 			++(*nonceptr);
+			nonce_initialized = true;
+		}
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
 
