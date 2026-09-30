@@ -407,6 +407,7 @@ struct work {
 	double shareratio;
 	double sharediff;
 	uint32_t resnonce;
+	uint32_t version_bits;
 
 	int height;
 	char *txs;
