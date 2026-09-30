@@ -1394,15 +1394,6 @@ static uint32_t vroll_mt_rand(void)
 	return y;
 }
 
-static uint32_t vroll_make_version(struct stratum_ctx *sctx, uint32_t base)
-{
-	static bool seeded = false;
-	if (!seeded) {
-		vroll_mt_seed((uint32_t)time(NULL) ^ (uint32_t)(uintptr_t)sctx);
-		seeded = true;
-	}
-	return (base & ~sctx->version_mask) | (vroll_mt_rand() & sctx->version_mask);
-}
 
 bool stratum_vroll_due(struct stratum_ctx *sctx)
 {
