@@ -1166,7 +1166,7 @@ static int share_result(int result, struct work *work, const char *reason)
 	if (opt_shareinfo && have_stratum && !work)
 		shareinfo = shareinfo_pop();
 
-	if (opt_shareinfo && result && shareinfo) {
+	if (opt_shareinfo && shareinfo) {
 		snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 			"\t<thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
 			shareinfo->thr_id, shareinfo->nonce, shareinfo->e1, shareinfo->e2,
