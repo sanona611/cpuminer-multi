@@ -2306,7 +2306,9 @@ static void *miner_thread(void *userdata)
 
 		/* adjust max_nonce to meet target scan time */
 		if (have_stratum)
-			max64 = LP_SCANTIME;
+			max64 = (opt_vroll && stratum.version_rolling && opt_vroll_interval > 0)
+				? min((int64_t)LP_SCANTIME, (int64_t)opt_vroll_interval)
+				: LP_SCANTIME;
 		else
 			max64 = g_work_time + (have_longpoll ? LP_SCANTIME : opt_scantime)
 					- time(NULL);
