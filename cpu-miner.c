@@ -246,6 +246,7 @@ bool opt_e2roll = false;
 int opt_e2rolltime = 1;
 bool opt_timeroll = false;
 int opt_timerolltime = 1;
+bool opt_shareinfo = false;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
@@ -427,6 +428,7 @@ Options:\n\
       --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n\
+	  --shareinfo    Show nonce/E1/E2/time/version for submitted shares\n\
       --hide-diff       Hide submitted block and net difficulty\n"
 #ifdef HAVE_SYSLOG_H
 "\
@@ -498,6 +500,7 @@ static struct option const options[] = {
 	{ "timeroll", 0, NULL, 1028 },
 	{ "timerolltime", 1, NULL, 1029 },
 	{ "scantime", 1, NULL, 's' },
+	{ "shareinfo", 0, NULL, 1038 },
 	{ "show-diff", 0, NULL, 1013 },
 	{ "hide-diff", 0, NULL, 1014 },
 	{ "max-log-rate", 1, NULL, 1019 },
@@ -1077,6 +1080,7 @@ static int share_result(int result, struct work *work, const char *reason)
 	const char *flag;
 	char suppl[32] = { 0 };
 	char s[345];
+	char shareinfo[640] = { 0 };
 	double hashrate;
 	double sharediff = work ? work->sharediff : stratum.sharediff;
 	int i;
@@ -1106,6 +1110,17 @@ static int share_result(int result, struct work *work, const char *reason)
 	else // accepted percent
 		sprintf(suppl, "%.2f%%", 100. * accepted_count / (accepted_count + rejected_count));
 
+	if (opt_shareinfo && stratum.shareinfo_valid) {
+		snprintf(shareinfo, sizeof(shareinfo),
+			"  thr=%d nonce=%s E1=%s E2=%s time=%s ver=%s",
+			stratum.shareinfo_thr_id,
+			stratum.shareinfo_nonce,
+			stratum.shareinfo_e1,
+			stratum.shareinfo_e2,
+			stratum.shareinfo_time,
+			stratum.shareinfo_ver);
+	}
+
 	switch (opt_algo) {
 	case ALGO_AXIOM:
 	case ALGO_CRYPTOLIGHT:
@@ -1113,18 +1128,17 @@ static int share_result(int result, struct work *work, const char *reason)
 	case ALGO_PLUCK:
 	case ALGO_SCRYPTJANE:
 		sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", hashrate);
-		applog(LOG_NOTICE, "accepted: %lu/%lu (%s), %s H/s %s",
+		applog(LOG_NOTICE, "accepted: %lu/%lu (%s), %s H/s %s%s",
 			accepted_count, accepted_count + rejected_count,
-			suppl, s, flag);
+			suppl, s, flag, shareinfo);
 		break;
 	default:
 		sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", hashrate / 1000.0);
-		applog(LOG_NOTICE, "accepted: %lu/%lu (%s), %s kH/s %s",
+		applog(LOG_NOTICE, "accepted: %lu/%lu (%s), %s kH/s %s%s",
 			accepted_count, accepted_count + rejected_count,
-			suppl, s, flag);
+			suppl, s, flag, shareinfo);
 		break;
 	}
-
 	if (reason) {
 		applog(LOG_WARNING, "reject reason: %s", reason);
 		if (0 && strncmp(reason, "low difficulty share", 20) == 0) {
@@ -1133,10 +1147,12 @@ static int share_result(int result, struct work *work, const char *reason)
 			return 0;
 		}
 	}
+	if (shareinfo[0])
+		stratum.shareinfo_valid = false;
 	return 1;
 }
 
-static bool submit_upstream_work(CURL *curl, struct work *work)
+static bool submit_upstream_work(CURL *curl, struct work *work, int thr_id)
 {
 	json_t *val, *res, *reason;
 	char s[JSON_BUF_LEN];
@@ -1183,7 +1199,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 					rpc2_id, work->job_id, noncestr, hashhex);
 			free(hashhex);
 		} else {
-			char *xnonce2str;
+			char *xnonce2str = NULL;
 
 			switch (opt_algo) {
 			case ALGO_DECRED:
@@ -1214,6 +1230,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 			bin2hex(ntimestr, (const unsigned char *)(&ntime), 4);
 			bin2hex(noncestr, (const unsigned char *)(&nonce), 4);
+
+			/* Build the exact extranonce2 string used by mining.submit. */
 			if (opt_algo == ALGO_DECRED) {
 				xnonce2str = abin2hex((unsigned char*)(&work->data[36]), stratum.xnonce1_size);
 			} else if (opt_algo == ALGO_SIA) {
@@ -1221,6 +1239,42 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				xnonce2str = abin2hex((unsigned char*)(&high_nonce), 2);
 			} else {
 				xnonce2str = abin2hex(work->xnonce2, work->xnonce2_len);
+			}
+
+			if (unlikely(!xnonce2str)) {
+				applog(LOG_ERR,
+					"Failed to encode Stratum extranonce2 for submit"
+					" (ptr=%p len=%zu)",
+					(void *)work->xnonce2, work->xnonce2_len);
+				goto out;
+			}
+
+			/*
+			 * Save the exact submit parameters after all strings have been
+			 * constructed.  In particular, xnonce2str must be initialized
+			 * before it is copied to shareinfo_e2.
+			 */
+			if (opt_shareinfo) {
+				char e1str[257];
+				stratum.shareinfo_thr_id = thr_id;
+				bin2hex(e1str, stratum.xnonce1, stratum.xnonce1_size);
+
+				snprintf(stratum.shareinfo_nonce,
+					sizeof(stratum.shareinfo_nonce),
+					"%s", noncestr);
+				snprintf(stratum.shareinfo_e1,
+					sizeof(stratum.shareinfo_e1),
+					"%s", e1str);
+				snprintf(stratum.shareinfo_e2,
+					sizeof(stratum.shareinfo_e2),
+					"%s", xnonce2str);
+				snprintf(stratum.shareinfo_time,
+					sizeof(stratum.shareinfo_time),
+					"%s", ntimestr);
+				snprintf(stratum.shareinfo_ver,
+					sizeof(stratum.shareinfo_ver),
+					"%08x", work->version_bits);
+				stratum.shareinfo_valid = true;
 			}
 			if (opt_debug) {
 				applog(LOG_DEBUG,
@@ -1540,7 +1594,7 @@ static bool workio_submit_work(struct workio_cmd *wc, CURL *curl)
 	int failures = 0;
 
 	/* submit solution to bitcoin via JSON-RPC */
-	while (!submit_upstream_work(curl, wc->u.work)) {
+	while (!submit_upstream_work(curl, wc->u.work, wc->thr ? wc->thr->id : -1)) {
 		if (unlikely((opt_retries >= 0) && (++failures > opt_retries))) {
 			applog(LOG_ERR, "...terminating workio thread");
 			return false;
@@ -2315,7 +2369,8 @@ static void *miner_thread(void *userdata)
 			work_free(&work);
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-			*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
+			*nonceptr = (0xffffffffU / opt_n_threads * thr_id) + mt19937_rand32() % (0xffffffffU / opt_n_threads);
+			end_nonce = (*nonceptr) + ((int64_t) thr_hashrates[thr_id]);
 			if (opt_randomize)
 				nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
 		} else
@@ -3379,6 +3434,9 @@ void parse_arg(int key, char *arg)
 		if (v < 1 || v > 9999) /* sanity check */
 			show_usage_and_exit(1);
 		opt_scantime = v;
+		break;
+	case 1038:
+		opt_shareinfo = true;
 		break;
 	case 'T':
 		v = atoi(arg);
