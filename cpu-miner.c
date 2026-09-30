@@ -2206,10 +2206,8 @@ static void *miner_thread(void *userdata)
 			pthread_mutex_lock(&g_work_lock);
 
 			if (opt_vroll && stratum.version_rolling && stratum_vroll_due(&stratum)) {
-				if (stratum_vroll_update(&stratum, &g_work)) {
+				if (stratum_vroll_update(&stratum, &g_work))
 					restart_threads();
-					regen_work = true;
-				}
 			}
 
 			// to clean: is g_work loaded before the memcmp ?
