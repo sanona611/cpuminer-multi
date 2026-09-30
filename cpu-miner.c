@@ -2939,6 +2939,7 @@ static void *stratum_thread(void *userdata)
 			restart_threads();
 
 			if (!stratum_connect(&stratum, stratum.url)
+					|| !stratum_configure_version_rolling(&stratum)
 					|| !stratum_subscribe(&stratum)
 					|| !stratum_authorize(&stratum, rpc_user, rpc_pass)) {
 				stratum_disconnect(&stratum);
