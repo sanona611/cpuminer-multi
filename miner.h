@@ -457,6 +457,11 @@ struct stratum_ctx {
 	pthread_mutex_t work_lock;
 
 	int bloc_height;
+	bool version_rolling;
+	uint32_t version_mask;
+	uint32_t rolled_version;
+	time_t vroll_last;
+	int vroll_block_height;
 };
 
 bool stratum_socket_full(struct stratum_ctx *sctx, int timeout);
@@ -466,6 +471,9 @@ bool stratum_connect(struct stratum_ctx *sctx, const char *url);
 void stratum_disconnect(struct stratum_ctx *sctx);
 bool stratum_subscribe(struct stratum_ctx *sctx);
 bool stratum_authorize(struct stratum_ctx *sctx, const char *user, const char *pass);
+bool stratum_configure_version_rolling(struct stratum_ctx *sctx);
+bool stratum_vroll_due(struct stratum_ctx *sctx);
+bool stratum_vroll_update(struct stratum_ctx *sctx, struct work *work);
 bool stratum_handle_method(struct stratum_ctx *sctx, const char *s);
 
 /* rpc 2.0 (xmr) */
