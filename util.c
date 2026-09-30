@@ -1411,7 +1411,7 @@ bool stratum_vroll_due(struct stratum_ctx *sctx)
 	return time(NULL) >= sctx->vroll_last + opt_vroll_interval;
 }
 
-bool stratum_vroll_update(struct stratum_ctx *sctx, struct work *work)
+static bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
 {
 	uint32_t base;
 	time_t now;
@@ -1420,7 +1420,6 @@ bool stratum_vroll_update(struct stratum_ctx *sctx, struct work *work)
 	if (!opt_vroll || !sctx->version_rolling)
 		return false;
 
-	pthread_mutex_lock(&sctx->work_lock);
 	base = le32dec(sctx->job.version);
 	now = time(NULL);
 
@@ -1439,6 +1438,14 @@ bool stratum_vroll_update(struct stratum_ctx *sctx, struct work *work)
 	}
 	if (work)
 		work->data[0] = sctx->rolled_version;
+	return change;
+}
+
+bool stratum_vroll_update(struct stratum_ctx *sctx, struct work *work)
+{
+	bool change;
+	pthread_mutex_lock(&sctx->work_lock);
+	change = stratum_vroll_update_locked(sctx, work);
 	pthread_mutex_unlock(&sctx->work_lock);
 	return change;
 }
