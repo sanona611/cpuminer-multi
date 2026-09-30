@@ -1158,7 +1158,7 @@ static int share_result(int result, struct work *work, const char *reason)
 	const char *flag;
 	char suppl[32] = { 0 };
 	char s[345];
-	char shareinfo_suffix[300] = { 0 };
+	char shareinfo_suffix[512] = { 0 };
 	double hashrate;
 	double sharediff = work ? work->sharediff : stratum.sharediff;
 	int i;
