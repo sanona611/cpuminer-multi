@@ -1411,7 +1411,7 @@ bool stratum_vroll_due(struct stratum_ctx *sctx)
 	return time(NULL) >= sctx->vroll_last + opt_vroll_interval;
 }
 
-static bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
+bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work)
 {
 	uint32_t base;
 	time_t now;
