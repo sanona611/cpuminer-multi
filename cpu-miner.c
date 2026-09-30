@@ -2071,6 +2071,7 @@ static void *miner_thread(void *userdata)
 	struct work work;
 	uint32_t max_nonce;
 	uint32_t end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+	bool nonce_initialized = false;
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2180,7 +2181,6 @@ static void *miner_thread(void *userdata)
 		}
 
 		uint32_t *nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-		bool nonce_initialized = false;
 
 		if (have_stratum) {
 			while (!jsonrpc_2 && time(NULL) >= g_work_time + 120)
