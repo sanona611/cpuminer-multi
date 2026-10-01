@@ -3,7 +3,7 @@
  * Copyright 2012-2014 pooler
  * Copyright 2014 Lucas Jones
  * Copyright 2014 Tanguy Pruvot
- *
+ * Copyright 2026 Sanona
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option)
@@ -62,7 +62,54 @@ BOOL WINAPI ConsoleHandler(DWORD);
 #define min(a,b) (a>b ? b : a)
 #define max(a,b) (a<b ? b : a)
 #endif
+* MT19937 (Mersenne Twister) used for Randomize. */
+#define MT_N 624
+#define MT_M 397
+#define MT_MATRIX_A 0x9908b0dfU
+#define MT_UPPER_MASK 0x80000000U
+#define MT_LOWER_MASK 0x7fffffffU
 
+static uint32_t mt_state[MT_N];
+static size_t mt_index = MT_N + 1;
+
+static void mt19937_seed(uint32_t seed)
+{
+	mt_state[0] = seed;
+	for (size_t i = 1; i < MT_N; i++)
+		mt_state[i] = 1812433253U * (mt_state[i - 1] ^ (mt_state[i - 1] >> 30)) + (uint32_t)i;
+	mt_index = MT_N;
+}
+
+static void mt19937_twist(void)
+{
+	for (size_t i = 0; i < MT_N; i++) {
+		uint32_t y = (mt_state[i] & MT_UPPER_MASK) |
+			(mt_state[(i + 1) % MT_N] & MT_LOWER_MASK);
+		mt_state[i] = mt_state[(i + MT_M) % MT_N] ^ (y >> 1);
+		if (y & 1U)
+			mt_state[i] ^= MT_MATRIX_A;
+	}
+	mt_index = 0;
+}
+
+static uint32_t mt19937_rand32(void)
+{
+	uint32_t y;
+	if (mt_index >= MT_N) {
+		if (mt_index == MT_N + 1) {
+			uint32_t seed = (uint32_t)time(NULL) ^
+				(uint32_t)(uintptr_t)&mt_state ^ 0x9e3779b9U;
+			mt19937_seed(seed);
+		}
+		mt19937_twist();
+	}
+	y = mt_state[mt_index++];
+	y ^= y >> 11;
+	y ^= (y << 7) & 0x9d2c5680U;
+	y ^= (y << 15) & 0xefc60000U;
+	y ^= y >> 18;
+	return y;
+}
 enum workio_commands {
 	WC_GET_WORK,
 	WC_SUBMIT_WORK,
@@ -2264,8 +2311,10 @@ static void *miner_thread(void *userdata)
 
 			if (!nonce_initialized || nonce_exhausted) {
 				*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
-				if (opt_randomize)
-					nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
+				if (opt_randomize) {
+					nonceptr[0] += mt19937_rand32() % (0xffffffffU / opt_n_threads);
+					end_nonce = (*nonceptr) + (int64_t) thr_hashrates[thr_id];
+				}
 				nonce_initialized = true;
 				if (opt_debug)
 					applog(LOG_DEBUG,
