@@ -116,6 +116,17 @@ static uint32_t mt19937_rand32(int thr_id)
 	y ^= y >> 18;
 	return y;
 }
+
+static uint32_t mt19937_random_nonce(int thr_id, uint32_t start_nonce,
+	uint32_t end_nonce)
+{
+	uint64_t span = (uint64_t)end_nonce - start_nonce + 1;
+	uint32_t random_value = mt19937_rand32(thr_id);
+	uint32_t offset =
+		(uint32_t)(((uint64_t)random_value * span) >> 32);
+
+	return start_nonce + offset;
+}
 enum workio_commands {
 	WC_GET_WORK,
 	WC_SUBMIT_WORK,
@@ -2322,12 +2333,10 @@ static void *miner_thread(void *userdata)
 					0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
 				*nonceptr = start_nonce;
 				if (opt_randomize) {
-					uint64_t span = (uint64_t)thread_end_nonce - start_nonce + 1;
-					uint32_t r = mt19937_rand32(thr_id);
-					uint32_t offset =
-						(uint32_t)(((uint64_t)r * span) >> 32);
-					*nonceptr = start_nonce + offset;
-					end_nonce = (*nonceptr) + (int64_t) thr_hashrates[thr_id];
+					*nonceptr = mt19937_random_nonce(
+						thr_id, start_nonce, thread_end_nonce);
+					end_nonce = *nonceptr +
+						(uint32_t)thr_hashrates[thr_id];
 				}
 				nonce_initialized = true;
 				if (opt_debug)
