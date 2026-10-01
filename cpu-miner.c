@@ -62,7 +62,7 @@ BOOL WINAPI ConsoleHandler(DWORD);
 #define min(a,b) (a>b ? b : a)
 #define max(a,b) (a<b ? b : a)
 #endif
-* MT19937 (Mersenne Twister) used for Randomize. */
+/* MT19937 (Mersenne Twister) used for Randomize. */
 #define MT_N 624
 #define MT_M 397
 #define MT_MATRIX_A 0x9908b0dfU
