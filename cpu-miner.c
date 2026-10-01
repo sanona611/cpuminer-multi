@@ -69,41 +69,47 @@ BOOL WINAPI ConsoleHandler(DWORD);
 #define MT_UPPER_MASK 0x80000000U
 #define MT_LOWER_MASK 0x7fffffffU
 
-static uint32_t mt_state[MT_N];
-static size_t mt_index = MT_N + 1;
+static uint32_t mt_state[MAX_CPUS][MT_N];
+static size_t mt_index[MAX_CPUS];
+static bool mt_initialized[MAX_CPUS];
 
-static void mt19937_seed(uint32_t seed)
+static void mt19937_seed(uint32_t *state, size_t *index, uint32_t seed)
 {
-	mt_state[0] = seed;
+	state[0] = seed;
 	for (size_t i = 1; i < MT_N; i++)
-		mt_state[i] = 1812433253U * (mt_state[i - 1] ^ (mt_state[i - 1] >> 30)) + (uint32_t)i;
-	mt_index = MT_N;
+		state[i] = 1812433253U * (state[i - 1] ^ (state[i - 1] >> 30)) + (uint32_t)i;
+	*index = MT_N;
 }
 
-static void mt19937_twist(void)
+static void mt19937_twist(uint32_t *state, size_t *index)
 {
 	for (size_t i = 0; i < MT_N; i++) {
-		uint32_t y = (mt_state[i] & MT_UPPER_MASK) |
-			(mt_state[(i + 1) % MT_N] & MT_LOWER_MASK);
-		mt_state[i] = mt_state[(i + MT_M) % MT_N] ^ (y >> 1);
+		uint32_t y = (state[i] & MT_UPPER_MASK) |
+			(state[(i + 1) % MT_N] & MT_LOWER_MASK);
+		state[i] = state[(i + MT_M) % MT_N] ^ (y >> 1);
 		if (y & 1U)
-			mt_state[i] ^= MT_MATRIX_A;
+			state[i] ^= MT_MATRIX_A;
 	}
-	mt_index = 0;
+	*index = 0;
 }
 
-static uint32_t mt19937_rand32(void)
+static uint32_t mt19937_rand32(int thr_id)
 {
+	uint32_t *state = mt_state[thr_id];
+	size_t *index = &mt_index[thr_id];
 	uint32_t y;
-	if (mt_index >= MT_N) {
-		if (mt_index == MT_N + 1) {
-			uint32_t seed = (uint32_t)time(NULL) ^
-				(uint32_t)(uintptr_t)&mt_state ^ 0x9e3779b9U;
-			mt19937_seed(seed);
-		}
-		mt19937_twist();
+
+	if (!mt_initialized[thr_id]) {
+		uint32_t seed = (uint32_t)time(NULL) ^
+			(uint32_t)(uintptr_t)state ^
+			(uint32_t)(thr_id * 0x9e3779b9U);
+		mt19937_seed(state, index, seed);
+		mt_initialized[thr_id] = true;
 	}
-	y = mt_state[mt_index++];
+	if (*index >= MT_N)
+		mt19937_twist(state, index);
+
+	y = state[(*index)++];
 	y ^= y >> 11;
 	y ^= (y << 7) & 0x9d2c5680U;
 	y ^= (y << 15) & 0xefc60000U;
@@ -2310,9 +2316,17 @@ static void *miner_thread(void *userdata)
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
 
 			if (!nonce_initialized || nonce_exhausted) {
-				*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
+				const uint32_t start_nonce =
+					0xffffffffU / opt_n_threads * thr_id;
+				const uint32_t thread_end_nonce =
+					0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+				*nonceptr = start_nonce;
 				if (opt_randomize) {
-					nonceptr[0] += mt19937_rand32() % (0xffffffffU / opt_n_threads);
+					uint64_t span = (uint64_t)thread_end_nonce - start_nonce + 1;
+					uint32_t r = mt19937_rand32(thr_id);
+					uint32_t offset =
+						(uint32_t)(((uint64_t)r * span) >> 32);
+					*nonceptr = start_nonce + offset;
 					end_nonce = (*nonceptr) + (int64_t) thr_hashrates[thr_id];
 				}
 				nonce_initialized = true;
