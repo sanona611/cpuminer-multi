@@ -2335,8 +2335,9 @@ static void *miner_thread(void *userdata)
 				if (opt_randomize) {
 					*nonceptr = mt19937_random_nonce(
 						thr_id, start_nonce, thread_end_nonce);
-					end_nonce = *nonceptr +
-						(uint32_t)thr_hashrates[thr_id];
+					end_nonce = (uint32_t)(
+						(uint64_t)*nonceptr +
+						(uint64_t)thr_hashrates[thr_id]);
 				}
 				nonce_initialized = true;
 				if (opt_debug)
