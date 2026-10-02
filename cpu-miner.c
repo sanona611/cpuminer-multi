@@ -583,7 +583,8 @@ static bool g_time_roll_initialized = false;
 static bool stratum_time_roll_locked(void)
 {
 	const uint32_t job_ntime = swab32(g_work.data[17]);
-	const uint32_t now = (uint32_t)time(NULL);
+	const time_t now_time = time(NULL);
+	const uint32_t now = (uint32_t)now_time;
 
 	if (!g_time_roll_initialized || job_ntime != g_time_roll_job_ntime) {
 		g_time_roll_job_ntime = job_ntime;
@@ -591,15 +592,20 @@ static bool stratum_time_roll_locked(void)
 			g_time_roll_ntime = job_ntime;
 		if (g_time_roll_ntime < now)
 			g_time_roll_ntime = now;
-		g_time_roll_last = time(NULL);
+		g_time_roll_last = now_time;
 		g_time_roll_initialized = true;
+
+		if (g_work.data[17] != swab32(g_time_roll_ntime)) {
+			g_work.data[17] = swab32(g_time_roll_ntime);
+			return true;
+		}
 		return false;
 	}
 
-	if (time(NULL) == g_time_roll_last)
+	if (now_time == g_time_roll_last)
 		return false;
 
-	g_time_roll_last = time(NULL);
+	g_time_roll_last = now_time;
 	++g_time_roll_ntime;
 	g_work.data[17] = swab32(g_time_roll_ntime);
 	return true;
