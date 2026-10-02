@@ -294,6 +294,7 @@ bool opt_extranonce = true;
 bool opt_shareinfo = false;
 bool opt_vroll = false;
 int opt_vroll_interval = 0;
+bool opt_timeroll = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool have_gbt = true;
@@ -467,7 +468,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize       Randomize scan range start to reduce duplicates\n\
+      --randomize       Randomize scan range start to reduce duplicates\n      --timeroll        Roll Stratum ntime every second\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -552,6 +553,7 @@ static struct option const options[] = {
 	{ "retries", 1, NULL, 'r' },
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
+	{ "timeroll", 0, NULL, 1065 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
 	{ "hide-diff", 0, NULL, 1014 },
@@ -2312,7 +2314,7 @@ static void *miner_thread(void *userdata)
 
 			pthread_mutex_lock(&g_work_lock);
 
-			if (stratum_time_roll_locked()) {
+			if (opt_timeroll && stratum_time_roll_locked()) {
 				if (opt_debug)
 					applog(LOG_DEBUG, "Stratum rolled ntime=%08x",
 						g_time_roll_ntime);
@@ -3625,6 +3627,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1024:
 		opt_randomize = true;
+		break;
+	case 1065:
+		opt_timeroll = true;
 		break;
 	case 'V':
 		show_version_and_exit();
