@@ -582,26 +582,6 @@ static uint64_t g_time_roll_seen_generation = 0;
 static uint32_t g_time_roll_last_unix_time = 0;
 static bool g_time_roll_initialized = false;
 
-static uint64_t monotonic_millis(void)
-{
-#ifdef WIN32
-	return (uint64_t)GetTickCount64();
-#elif defined(CLOCK_MONOTONIC)
-	struct timespec ts;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
-		return (uint64_t)ts.tv_sec * 1000ULL +
-			(uint64_t)ts.tv_nsec / 1000000ULL;
-#endif
-	{
-		struct timeval tv;
-
-		gettimeofday(&tv, NULL);
-		return (uint64_t)tv.tv_sec * 1000ULL +
-			(uint64_t)tv.tv_usec / 1000ULL;
-	}
-}
-
 static bool stratum_time_roll_locked(void)
 {
 	const uint32_t unix_time = (uint32_t)time(NULL);
