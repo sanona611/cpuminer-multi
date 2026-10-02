@@ -2311,7 +2311,7 @@ static void *miner_thread(void *userdata)
 			if (opt_timeroll && stratum_time_roll_locked()) {
 				if (opt_debug)
 					applog(LOG_DEBUG, "Stratum rolled ntime=%08x",
-						g_time_roll_ntime);
+						g_time_roll_last_unix_time);
 				restart_threads();
 			}
 
