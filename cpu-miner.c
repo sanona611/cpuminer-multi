@@ -575,6 +575,36 @@ static pthread_mutex_t g_work_lock;
 static bool submit_old = false;
 static char *lp_id;
 
+static uint32_t g_time_roll_job_ntime = 0;
+static uint32_t g_time_roll_ntime = 0;
+static time_t g_time_roll_last = 0;
+static bool g_time_roll_initialized = false;
+
+static bool stratum_time_roll_locked(void)
+{
+	const uint32_t job_ntime = swab32(g_work.data[17]);
+	const uint32_t now = (uint32_t)time(NULL);
+
+	if (!g_time_roll_initialized || job_ntime != g_time_roll_job_ntime) {
+		g_time_roll_job_ntime = job_ntime;
+		if (g_time_roll_ntime < job_ntime)
+			g_time_roll_ntime = job_ntime;
+		if (g_time_roll_ntime < now)
+			g_time_roll_ntime = now;
+		g_time_roll_last = time(NULL);
+		g_time_roll_initialized = true;
+		return false;
+	}
+
+	if (time(NULL) == g_time_roll_last)
+		return false;
+
+	g_time_roll_last = time(NULL);
+	++g_time_roll_ntime;
+	g_work.data[17] = swab32(g_time_roll_ntime);
+	return true;
+}
+
 struct shareinfo_entry {
 	int thr_id;
 	uint32_t nonce;
@@ -2275,6 +2305,13 @@ static void *miner_thread(void *userdata)
 			}
 
 			pthread_mutex_lock(&g_work_lock);
+
+			if (stratum_time_roll_locked()) {
+				if (opt_debug)
+					applog(LOG_DEBUG, "Stratum rolled ntime=%08x",
+						g_time_roll_ntime);
+				restart_threads();
+			}
 
 			if (opt_vroll && stratum.version_rolling &&
 			    (nonce_exhausted_now || stratum_vroll_due(&stratum))) {
