@@ -579,36 +579,53 @@ static char *lp_id;
 
 static uint32_t g_time_roll_job_ntime = 0;
 static uint32_t g_time_roll_ntime = 0;
-static time_t g_time_roll_last = 0;
+static uint64_t g_time_roll_last_ms = 0;
 static bool g_time_roll_initialized = false;
+
+static uint64_t monotonic_millis(void)
+{
+#ifdef WIN32
+	return (uint64_t)GetTickCount64();
+#elif defined(CLOCK_MONOTONIC)
+	struct timespec ts;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+		return (uint64_t)ts.tv_sec * 1000ULL +
+			(uint64_t)ts.tv_nsec / 1000000ULL;
+#endif
+	{
+		struct timeval tv;
+
+		gettimeofday(&tv, NULL);
+		return (uint64_t)tv.tv_sec * 1000ULL +
+			(uint64_t)tv.tv_usec / 1000ULL;
+	}
+}
 
 static bool stratum_time_roll_locked(void)
 {
 	const uint32_t job_ntime = swab32(g_work.data[17]);
-	const time_t now_time = time(NULL);
-	const uint32_t now = (uint32_t)now_time;
+	const uint64_t now_ms = monotonic_millis();
 
 	if (!g_time_roll_initialized || job_ntime != g_time_roll_job_ntime) {
 		g_time_roll_job_ntime = job_ntime;
-		if (g_time_roll_ntime < job_ntime)
-			g_time_roll_ntime = job_ntime;
-		if (g_time_roll_ntime < now)
-			g_time_roll_ntime = now;
-		g_time_roll_last = now_time;
+		g_time_roll_ntime = job_ntime;
+		g_time_roll_last_ms = now_ms;
 		g_time_roll_initialized = true;
-
-		if (g_work.data[17] != swab32(g_time_roll_ntime)) {
-			g_work.data[17] = swab32(g_time_roll_ntime);
-			return true;
-		}
 		return false;
 	}
 
-	if (now_time == g_time_roll_last)
+	if (now_ms - g_time_roll_last_ms < 1000ULL)
 		return false;
 
-	g_time_roll_last = now_time;
-	++g_time_roll_ntime;
+	{
+		const uint64_t elapsed_ms = now_ms - g_time_roll_last_ms;
+		const uint64_t elapsed_seconds = elapsed_ms / 1000ULL;
+
+		g_time_roll_ntime += (uint32_t)elapsed_seconds;
+		g_time_roll_last_ms += elapsed_seconds * 1000ULL;
+	}
+
 	g_work.data[17] = swab32(g_time_roll_ntime);
 	return true;
 }
