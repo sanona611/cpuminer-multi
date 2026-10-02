@@ -577,9 +577,9 @@ static pthread_mutex_t g_work_lock;
 static bool submit_old = false;
 static char *lp_id;
 
-static uint32_t g_time_roll_job_ntime = 0;
-static uint32_t g_time_roll_ntime = 0;
-static uint64_t g_time_roll_last_ms = 0;
+static uint64_t g_time_roll_work_generation = 0;
+static uint64_t g_time_roll_seen_generation = 0;
+static uint32_t g_time_roll_last_unix_time = 0;
 static bool g_time_roll_initialized = false;
 
 static uint64_t monotonic_millis(void)
@@ -604,29 +604,26 @@ static uint64_t monotonic_millis(void)
 
 static bool stratum_time_roll_locked(void)
 {
-	const uint32_t job_ntime = swab32(g_work.data[17]);
-	const uint64_t now_ms = monotonic_millis();
+	const uint32_t unix_time = (uint32_t)time(NULL);
 
-	if (!g_time_roll_initialized || job_ntime != g_time_roll_job_ntime) {
-		g_time_roll_job_ntime = job_ntime;
-		g_time_roll_ntime = job_ntime;
-		g_time_roll_last_ms = now_ms;
+	/*
+	 * A new Stratum work item must use the current Unix time as its
+	 * ntime base. Do not use the pool-provided ntime as a clock source.
+	 */
+	if (!g_time_roll_initialized ||
+	    g_time_roll_seen_generation != g_time_roll_work_generation) {
+		g_time_roll_seen_generation = g_time_roll_work_generation;
+		g_time_roll_last_unix_time = unix_time;
 		g_time_roll_initialized = true;
-		return false;
+		g_work.data[17] = swab32(unix_time);
+		return true;
 	}
 
-	if (now_ms - g_time_roll_last_ms < 1000ULL)
+	if (unix_time == g_time_roll_last_unix_time)
 		return false;
 
-	{
-		const uint64_t elapsed_ms = now_ms - g_time_roll_last_ms;
-		const uint64_t elapsed_seconds = elapsed_ms / 1000ULL;
-
-		g_time_roll_ntime += (uint32_t)elapsed_seconds;
-		g_time_roll_last_ms += elapsed_seconds * 1000ULL;
-	}
-
-	g_work.data[17] = swab32(g_time_roll_ntime);
+	g_time_roll_last_unix_time = unix_time;
+	g_work.data[17] = swab32(unix_time);
 	return true;
 }
 
@@ -3112,6 +3109,7 @@ static void *stratum_thread(void *userdata)
 		{
 			pthread_mutex_lock(&g_work_lock);
 			stratum_gen_work(&stratum, &g_work);
+			g_time_roll_work_generation++;
 			time(&g_work_time);
 			pthread_mutex_unlock(&g_work_lock);
 
