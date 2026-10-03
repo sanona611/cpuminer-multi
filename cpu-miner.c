@@ -311,6 +311,7 @@ int opt_maxlograte = 5;
 bool opt_randomize = false;
 int opt_extranonce1_reconnect = 0;
 static volatile int extranonce1_nonce_exhausted = 0;
+static uint64_t extranonce1_job_generation = 0;
 int opt_extranonce1_local_roll = 0;
 static char *opt_extranonce1_local = NULL;
 static int opt_retries = -1;
@@ -2820,13 +2821,13 @@ static void *miner_thread(void *userdata)
 		 * mining thread has exhausted its assigned nonce range for this work. */
 		if (!rc && opt_extranonce1_reconnect < 0 &&
 			!work_restart[thr_id].restart && *nonceptr >= end_nonce) {
-			static __thread char *exhausted_job_id;
-			const char *job_id = work.job_id ? work.job_id : "";
-			if (!exhausted_job_id || strcmp(exhausted_job_id, job_id)) {
-				free(exhausted_job_id);
-				exhausted_job_id = strdup(job_id);
-				__sync_fetch_and_add(&extranonce1_nonce_exhausted, 1);
+			static __thread uint64_t exhausted_generation = UINT64_MAX;
+			pthread_mutex_lock(&g_work_lock);
+			if (exhausted_generation != extranonce1_job_generation) {
+				exhausted_generation = extranonce1_job_generation;
+				extranonce1_nonce_exhausted++;
 			}
+			pthread_mutex_unlock(&g_work_lock);
 		}
 
 		/* if nonce found, submit work */
@@ -3207,6 +3208,8 @@ static void *stratum_thread(void *userdata)
 			pthread_mutex_lock(&g_work_lock);
 			stratum_gen_work(&stratum, &g_work);
 			g_time_roll_work_generation++;
+			extranonce1_job_generation++;
+			extranonce1_nonce_exhausted = 0;
 			time(&g_work_time);
 			pthread_mutex_unlock(&g_work_lock);
 
