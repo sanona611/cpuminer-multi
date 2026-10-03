@@ -3212,6 +3212,7 @@ static void *stratum_thread(void *userdata)
 
 			if (stratum.job.clean || jsonrpc_2) {
 				static uint32_t last_bloc_height;
+				static char *last_clean_job_id;
 				if (!opt_quiet && last_bloc_height != stratum.bloc_height) {
 					last_bloc_height = stratum.bloc_height;
 					if (net_diff > 0.)
@@ -3222,6 +3223,18 @@ static void *stratum_thread(void *userdata)
 							stratum.bloc_height);
 				}
 				restart_threads();
+				if (stratum.job.clean && opt_extranonce1_reconnect < 0) {
+					const char *job_id = stratum.job.job_id ? stratum.job.job_id : "";
+					if (!last_clean_job_id || strcmp(last_clean_job_id, job_id)) {
+						free(last_clean_job_id);
+						last_clean_job_id = strdup(job_id);
+						stratum_clear_session_for_new_extranonce();
+						if (!opt_quiet)
+							applog(LOG_INFO, "E1 reconnect: clean job received");
+						stratum_disconnect(&stratum);
+						continue;
+					}
+				}
 			} else if (opt_debug && !opt_quiet) {
 					applog(LOG_BLUE, "%s asks job %lu for block %d", short_url,
 						strtoul(stratum.job.job_id, NULL, 16), stratum.bloc_height);
@@ -3831,7 +3844,7 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
-		if (key == 1064 && optind < argc && argv[optind][0] != '-' &&
+		if ((key == 1064 || key == 1066) && optind < argc && argv[optind][0] != '-' &&
 		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
 			parse_arg(key, argv[optind]);
 			optind++;
