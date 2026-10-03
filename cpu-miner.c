@@ -2821,7 +2821,7 @@ static void *miner_thread(void *userdata)
 		/* In event mode, request a new pool extranonce1 only after every
 		 * mining thread has exhausted its assigned nonce range for this work. */
 		if (!rc && opt_extranonce1_reconnect < 0 &&
-			!work_restart[thr_id].restart && *nonceptr >= end_nonce) {
+			!work_restart[thr_id].restart && *nonceptr >= thread_end_nonce) {
 			pthread_mutex_lock(&g_work_lock);
 			if (extranonce1_thread_generation[thr_id] != extranonce1_job_generation) {
 				extranonce1_thread_generation[thr_id] = extranonce1_job_generation;
