@@ -468,7 +468,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize       Randomize scan range start to reduce duplicates\n      --timeroll        Roll Stratum ntime every second\n\
+      --randomize       Randomize scan range start to reduce duplicates\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect=N  Reconnect and request a new extranonce1 every N seconds\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -554,6 +554,9 @@ static struct option const options[] = {
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
 	{ "timeroll", 0, NULL, 1065 },
+	{ "extranonce1-reconnect", 1, NULL, 1066 },
+	{ "extranonce1-local", 1, NULL, 1067 },
+	{ "extranonce1-local-roll", 1, NULL, 1068 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
 	{ "hide-diff", 0, NULL, 1014 },
@@ -3032,10 +3035,62 @@ out:
 	return ret;
 }
 
+static bool stratum_apply_local_extranonce1(void)
+{
+	int i;
+	size_t n;
+	if (!opt_extranonce1_local)
+		return false;
+	n = strlen(opt_extranonce1_local) / 2;
+	if (n != stratum.xnonce1_size)
+		return false;
+	pthread_mutex_lock(&stratum.work_lock);
+	hex2bin(stratum.xnonce1, opt_extranonce1_local, n);
+	if (stratum.job.coinbase && stratum.job.xnonce2) {
+		ptrdiff_t off = stratum.job.xnonce2 - stratum.job.coinbase;
+		memcpy(stratum.job.coinbase + off - n, stratum.xnonce1, n);
+	}
+	pthread_mutex_unlock(&stratum.work_lock);
+	return true;
+}
+
+static bool stratum_roll_local_extranonce1(void)
+{
+	int i;
+	pthread_mutex_lock(&stratum.work_lock);
+	if (!stratum.xnonce1 || !stratum.xnonce1_size) {
+		pthread_mutex_unlock(&stratum.work_lock);
+		return false;
+	}
+	for (i = (int)stratum.xnonce1_size - 1; i >= 0; i--) {
+		if (++stratum.xnonce1[i])
+			break;
+	}
+	if (stratum.job.coinbase && stratum.job.xnonce2) {
+		ptrdiff_t off = stratum.job.xnonce2 - stratum.job.coinbase;
+		memcpy(stratum.job.coinbase + off - stratum.xnonce1_size,
+			stratum.xnonce1, stratum.xnonce1_size);
+	}
+	pthread_mutex_unlock(&stratum.work_lock);
+	return true;
+}
+
+static void stratum_clear_session_for_new_extranonce(void)
+{
+	pthread_mutex_lock(&stratum.work_lock);
+	if (stratum.session_id) {
+		free(stratum.session_id);
+		stratum.session_id = NULL;
+	}
+	pthread_mutex_unlock(&stratum.work_lock);
+}
+
 static void *stratum_thread(void *userdata)
 {
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	char *s;
+	time_t extranonce1_next = 0;
+	time_t local_extranonce1_next = 0;
 
 	stratum.url = (char*) tq_pop(mythr->q, NULL);
 	if (!stratum.url)
@@ -3084,6 +3139,47 @@ static void *stratum_thread(void *userdata)
 			}
 		}
 
+		if (stratum.curl && opt_extranonce1_local && !stratum.xnonce1_size) {
+			/* Wait for the pool subscription before applying a local E1. */
+		}
+		if (stratum.curl && opt_extranonce1_local && stratum.xnonce1_size) {
+			if (stratum_apply_local_extranonce1()) {
+				pthread_mutex_lock(&g_work_lock);
+				stratum_gen_work(&stratum, &g_work);
+				pthread_mutex_unlock(&g_work_lock);
+				restart_threads();
+				if (!opt_quiet)
+					applog(LOG_INFO, "E1 local=%s", opt_extranonce1_local);
+				free(opt_extranonce1_local);
+				opt_extranonce1_local = NULL;
+			}
+		}
+		if (stratum.curl && opt_extranonce1_local_roll && time(NULL) >= local_extranonce1_next) {
+			if (stratum_roll_local_extranonce1()) {
+				pthread_mutex_lock(&g_work_lock);
+				stratum_gen_work(&stratum, &g_work);
+				pthread_mutex_unlock(&g_work_lock);
+				restart_threads();
+				local_extranonce1_next = time(NULL) + opt_extranonce1_local_roll;
+				if (!opt_quiet && opt_debug) {
+					char *e1 = (char *)malloc(stratum.xnonce1_size * 2 + 1);
+					if (e1) {
+						bin2hex(e1, stratum.xnonce1, stratum.xnonce1_size);
+						applog(LOG_DEBUG, "E1 local-roll=%s", e1);
+						free(e1);
+					}
+				}
+			}
+		}
+		if (stratum.curl && opt_extranonce1_reconnect && time(NULL) >= extranonce1_next) {
+			stratum_clear_session_for_new_extranonce();
+			if (!opt_quiet)
+				applog(LOG_INFO, "E1 reconnect: requesting new extranonce1");
+			stratum_disconnect(&stratum);
+			extranonce1_next = time(NULL) + opt_extranonce1_reconnect;
+			continue;
+		}
+
 		if (stratum.job.job_id &&
 			(!g_work_time || strcmp(stratum.job.job_id, g_work.job_id)) )
 		{
@@ -3111,11 +3207,14 @@ static void *stratum_thread(void *userdata)
 			}
 		}
 
-		if (!stratum_socket_full(&stratum, opt_timeout)) {
+		if (opt_extranonce1_reconnect || opt_extranonce1_local_roll) {
+			if (!stratum_socket_full(&stratum, 1))
+				continue;
+		} else if (!stratum_socket_full(&stratum, opt_timeout)) {
 			applog(LOG_ERR, "Stratum connection timeout");
 			s = NULL;
-		} else
-			s = stratum_recv_line(&stratum);
+			} 
+		s = stratum_recv_line(&stratum);
 		if (!s) {
 			stratum_disconnect(&stratum);
 			applog(LOG_ERR, "Stratum connection interrupted");
@@ -3625,6 +3724,24 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1065:
 		opt_timeroll = true;
+		break;
+	case 1066:
+		v = atoi(arg);
+		if (v < 1 || v > 86400)
+			show_usage_and_exit(1);
+		opt_extranonce1_reconnect = v;
+		break;
+	case 1067:
+		if (!arg || !*arg || (strlen(arg) & 1) || strlen(arg) > 32)
+			show_usage_and_exit(1);
+		free(opt_extranonce1_local);
+		opt_extranonce1_local = strdup(arg);
+		break;
+	case 1068:
+		v = atoi(arg);
+		if (v < 1 || v > 86400)
+			show_usage_and_exit(1);
+		opt_extranonce1_local_roll = v;
 		break;
 	case 'V':
 		show_version_and_exit();
