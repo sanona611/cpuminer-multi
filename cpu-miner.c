@@ -2304,8 +2304,6 @@ static void *miner_thread(void *userdata)
 		}
 
 		uint32_t *nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-		const uint32_t thread_end_nonce =
-			0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
 		bool nonce_exhausted_now = nonce_initialized && *nonceptr >= end_nonce;
 
 		if (have_stratum) {
@@ -2379,6 +2377,8 @@ static void *miner_thread(void *userdata)
 			if (!nonce_initialized || nonce_exhausted) {
 				const uint32_t start_nonce =
 					0xffffffffU / opt_n_threads * thr_id;
+				const uint32_t thread_end_nonce =
+					0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
 				*nonceptr = start_nonce;
 				if (opt_randomize) {
 					*nonceptr = mt19937_random_nonce(
@@ -2821,7 +2821,7 @@ static void *miner_thread(void *userdata)
 		/* In event mode, request a new pool extranonce1 only after every
 		 * mining thread has exhausted its assigned nonce range for this work. */
 		if (!rc && opt_extranonce1_reconnect < 0 &&
-			!work_restart[thr_id].restart && *nonceptr >= thread_end_nonce) {
+			!work_restart[thr_id].restart && *nonceptr >= end_nonce) {
 			pthread_mutex_lock(&g_work_lock);
 			if (extranonce1_thread_generation[thr_id] != extranonce1_job_generation) {
 				extranonce1_thread_generation[thr_id] = extranonce1_job_generation;
