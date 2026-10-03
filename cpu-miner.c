@@ -310,6 +310,7 @@ bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
 int opt_extranonce1_reconnect = 0;
+static volatile int extranonce1_nonce_exhausted = 0;
 int opt_extranonce1_local_roll = 0;
 static char *opt_extranonce1_local = NULL;
 static int opt_retries = -1;
@@ -471,7 +472,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize       Randomize scan range start to reduce duplicates\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect=N  Reconnect and request a new extranonce1 every N seconds\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
+      --randomize       Randomize scan range start to reduce duplicates\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -557,7 +558,7 @@ static struct option const options[] = {
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
 	{ "timeroll", 0, NULL, 1065 },
-	{ "extranonce1-reconnect", 1, NULL, 1066 },
+	{ "extranonce1-reconnect", 2, NULL, 1066 },
 	{ "extranonce1-local", 1, NULL, 1067 },
 	{ "extranonce1-local-roll", 1, NULL, 1068 },
 	{ "scantime", 1, NULL, 's' },
@@ -2815,6 +2816,19 @@ static void *miner_thread(void *userdata)
 			}
 		}
 
+		/* In event mode, request a new pool extranonce1 only after every
+		 * mining thread has exhausted its assigned nonce range for this work. */
+		if (!rc && opt_extranonce1_reconnect < 0 &&
+			!work_restart[thr_id].restart && *nonceptr >= end_nonce) {
+			static __thread char *exhausted_job_id;
+			const char *job_id = work.job_id ? work.job_id : "";
+			if (!exhausted_job_id || strcmp(exhausted_job_id, job_id)) {
+				free(exhausted_job_id);
+				exhausted_job_id = strdup(job_id);
+				__sync_fetch_and_add(&extranonce1_nonce_exhausted, 1);
+			}
+		}
+
 		/* if nonce found, submit work */
 		if (rc && !opt_benchmark) {
 			if (!submit_work(mythr, &work))
@@ -3137,7 +3151,7 @@ static void *stratum_thread(void *userdata)
 			}
 		}
 
-		if (opt_extranonce1_reconnect && extranonce1_next == 0)
+		if (opt_extranonce1_reconnect > 0 && extranonce1_next == 0)
 			extranonce1_next = time(NULL) + opt_extranonce1_reconnect;
 		if (opt_extranonce1_local_roll && local_extranonce1_next == 0)
 			local_extranonce1_next = time(NULL) + opt_extranonce1_local_roll;
@@ -3174,12 +3188,16 @@ static void *stratum_thread(void *userdata)
 				}
 			}
 		}
-		if (stratum.curl && opt_extranonce1_reconnect && time(NULL) >= extranonce1_next) {
+		if (stratum.curl &&
+			((opt_extranonce1_reconnect > 0 && time(NULL) >= extranonce1_next) ||
+			 (opt_extranonce1_reconnect < 0 && extranonce1_nonce_exhausted >= opt_n_threads))) {
 			stratum_clear_session_for_new_extranonce();
 			if (!opt_quiet)
 				applog(LOG_INFO, "E1 reconnect: requesting new extranonce1");
+			extranonce1_nonce_exhausted = 0;
 			stratum_disconnect(&stratum);
-			extranonce1_next = time(NULL) + opt_extranonce1_reconnect;
+			if (opt_extranonce1_reconnect > 0)
+				extranonce1_next = time(NULL) + opt_extranonce1_reconnect;
 			continue;
 		}
 
@@ -3729,6 +3747,11 @@ void parse_arg(int key, char *arg)
 		opt_timeroll = true;
 		break;
 	case 1066:
+		if (!arg || !*arg) {
+			/* No N: reconnect on full nonce-space exhaustion or clean job. */
+			opt_extranonce1_reconnect = -1;
+			break;
+		}
 		v = atoi(arg);
 		if (v < 1 || v > 86400)
 			show_usage_and_exit(1);
