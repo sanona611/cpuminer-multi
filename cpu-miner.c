@@ -309,6 +309,9 @@ static bool opt_background = false;
 bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
+int opt_extranonce1_reconnect = 0;
+int opt_extranonce1_local_roll = 0;
+static char *opt_extranonce1_local = NULL;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
@@ -3037,7 +3040,6 @@ out:
 
 static bool stratum_apply_local_extranonce1(void)
 {
-	int i;
 	size_t n;
 	if (!opt_extranonce1_local)
 		return false;
