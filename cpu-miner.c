@@ -3139,6 +3139,11 @@ static void *stratum_thread(void *userdata)
 			}
 		}
 
+		if (opt_extranonce1_reconnect && extranonce1_next == 0)
+			extranonce1_next = time(NULL) + opt_extranonce1_reconnect;
+		if (opt_extranonce1_local_roll && local_extranonce1_next == 0)
+			local_extranonce1_next = time(NULL) + opt_extranonce1_local_roll;
+
 		if (stratum.curl && opt_extranonce1_local && !stratum.xnonce1_size) {
 			/* Wait for the pool subscription before applying a local E1. */
 		}
