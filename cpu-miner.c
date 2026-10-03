@@ -312,6 +312,7 @@ bool opt_randomize = false;
 int opt_extranonce1_reconnect = 0;
 static volatile int extranonce1_nonce_exhausted = 0;
 static uint64_t extranonce1_job_generation = 0;
+static uint64_t extranonce1_thread_generation[MAX_CPUS];
 int opt_extranonce1_local_roll = 0;
 static char *opt_extranonce1_local = NULL;
 static int opt_retries = -1;
@@ -2821,10 +2822,9 @@ static void *miner_thread(void *userdata)
 		 * mining thread has exhausted its assigned nonce range for this work. */
 		if (!rc && opt_extranonce1_reconnect < 0 &&
 			!work_restart[thr_id].restart && *nonceptr >= end_nonce) {
-			static __thread uint64_t exhausted_generation = UINT64_MAX;
 			pthread_mutex_lock(&g_work_lock);
-			if (exhausted_generation != extranonce1_job_generation) {
-				exhausted_generation = extranonce1_job_generation;
+			if (extranonce1_thread_generation[thr_id] != extranonce1_job_generation) {
+				extranonce1_thread_generation[thr_id] = extranonce1_job_generation;
 				extranonce1_nonce_exhausted++;
 			}
 			pthread_mutex_unlock(&g_work_lock);
