@@ -1507,7 +1507,7 @@ bool stratum_configure_version_rolling(struct stratum_ctx *sctx)
 	sctx->rolled_version = 0;
 	sctx->vroll_last = 0;
 	sctx->vroll_block_height = -1;
-	applog(LOG_NOTICE, "Stratum version rolling enabled, mask=%08x", sctx->version_mask);
+	// applog(LOG_NOTICE, "Stratum version rolling enabled, mask=%08x", sctx->version_mask);
 
 	free(s);
 	free(sret);
