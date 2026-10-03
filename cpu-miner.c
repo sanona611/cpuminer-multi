@@ -2392,10 +2392,6 @@ static void *miner_thread(void *userdata)
 						had_old_job ? " (new job)" : " (initial)");
 			} else {
 				*nonceptr = old_nonce;
-				if (opt_debug)
-					applog(LOG_DEBUG,
-						"NONCE CONTINUE: thr=%d job=%s nonce=%08x",
-						thr_id, new_job_id, *nonceptr);
 			}
 		} else {
 			++(*nonceptr);
