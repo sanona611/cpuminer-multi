@@ -344,6 +344,7 @@ static bool opt_background = false;
 bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
+bool opt_extranonce2_randomize = false;
 int opt_extranonce1_reconnect = 0;
 static volatile int extranonce1_nonce_exhausted = 0;
 static uint64_t extranonce1_job_generation = 0;
@@ -509,7 +510,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize       Randomize scan range start to reduce duplicates\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
+      --randomize       Randomize scan range start to reduce duplicates\n      --extranonce2-randomize  Randomize Stratum extranonce2 with Mersenne Twister\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -594,6 +595,7 @@ static struct option const options[] = {
 	{ "retries", 1, NULL, 'r' },
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
+	{ "extranonce2-randomize", 0, NULL, 1069 },
 	{ "timeroll", 0, NULL, 1065 },
 	{ "extranonce1-reconnect", 2, NULL, 1066 },
 	{ "extranonce1-local", 1, NULL, 1067 },
@@ -2374,7 +2376,7 @@ static void *miner_thread(void *userdata)
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
 			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work, true);
+				stratum_gen_work(&stratum, &g_work, opt_extranonce2_randomize && regen_work);
 			}
 
 		} else {
@@ -3795,6 +3797,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1024:
 		opt_randomize = true;
+		break;
+	case 1069:
+		opt_extranonce2_randomize = true;
 		break;
 	case 1065:
 		opt_timeroll = true;
