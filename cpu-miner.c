@@ -152,6 +152,8 @@ static uint32_t mt19937_xnonce2_rand32(void)
 	return y;
 }
 
+extern int opt_extranonce2_randomize_bits;
+
 static void stratum_randomize_xnonce2(struct stratum_ctx *sctx)
 {
 	int bits = opt_extranonce2_randomize_bits;
@@ -3817,8 +3819,6 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1069:
 		opt_extranonce2_randomize = true;
-		if (!arg && optind < argc && argv[optind][0] != '-')
-			arg = argv[optind++];
 		if (arg && *arg) {
 			v = atoi(arg);
 			if (v != 8 && v != 16 && v != 32)
@@ -3914,7 +3914,7 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
-		if ((key == 1064 || key == 1066) && optind < argc && argv[optind][0] != '-' &&
+		if ((key == 1064 || key == 1066 || key == 1069) && optind < argc && argv[optind][0] != '-' &&
 		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
 			parse_arg(key, argv[optind]);
 			optind++;
