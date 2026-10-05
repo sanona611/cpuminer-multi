@@ -154,12 +154,28 @@ static uint32_t mt19937_xnonce2_rand32(void)
 
 static void stratum_randomize_xnonce2(struct stratum_ctx *sctx)
 {
-	size_t t = 0;
-	while (t < sctx->xnonce2_size) {
+	int bits = opt_extranonce2_randomize_bits;
+	size_t bytes;
+
+	if (bits <= 0)
+		bits = (int)(sctx->xnonce2_size * 8);
+
+	bytes = (size_t)((bits + 7) / 8);
+	if (bytes > sctx->xnonce2_size)
+		bytes = sctx->xnonce2_size;
+
+	memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
+	for (size_t t = 0; t < bytes; ) {
 		uint32_t r = mt19937_xnonce2_rand32();
-		size_t n = min((size_t)4, sctx->xnonce2_size - t);
+		size_t n = min((size_t)4, bytes - t);
 		memcpy(sctx->job.xnonce2 + t, &r, n);
 		t += n;
+	}
+
+	if (bits < (int)(bytes * 8)) {
+		unsigned int used = (unsigned int)(bits & 7);
+		if (used)
+			sctx->job.xnonce2[bytes - 1] &= (uchar)((1U << used) - 1U);
 	}
 }
 enum workio_commands {
@@ -345,6 +361,7 @@ bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
 bool opt_extranonce2_randomize = false;
+int opt_extranonce2_randomize_bits = 0;
 int opt_extranonce1_reconnect = 0;
 static volatile int extranonce1_nonce_exhausted = 0;
 static uint64_t extranonce1_job_generation = 0;
@@ -510,7 +527,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize       Randomize scan range start to reduce duplicates\n      --extranonce2-randomize  Randomize Stratum extranonce2 with Mersenne Twister\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
+      --randomize       Randomize scan range start to reduce duplicates\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -595,7 +612,7 @@ static struct option const options[] = {
 	{ "retries", 1, NULL, 'r' },
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
-	{ "extranonce2-randomize", 0, NULL, 1069 },
+	{ "extranonce2-randomize", 2, NULL, 1069 },
 	{ "timeroll", 0, NULL, 1065 },
 	{ "extranonce1-reconnect", 2, NULL, 1066 },
 	{ "extranonce1-local", 1, NULL, 1067 },
@@ -3800,6 +3817,14 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1069:
 		opt_extranonce2_randomize = true;
+		if (!arg && optind < argc && argv[optind][0] != '-')
+			arg = argv[optind++];
+		if (arg && *arg) {
+			v = atoi(arg);
+			if (v != 8 && v != 16 && v != 32)
+				show_usage_and_exit(1);
+			opt_extranonce2_randomize_bits = v;
+		}
 		break;
 	case 1065:
 		opt_timeroll = true;
