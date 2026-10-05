@@ -3213,7 +3213,7 @@ static void *stratum_thread(void *userdata)
 		if (stratum.curl && opt_extranonce1_local_roll && time(NULL) >= local_extranonce1_next) {
 			if (stratum_roll_local_extranonce1()) {
 				pthread_mutex_lock(&g_work_lock);
-				stratum_gen_work(&stratum, &g_work, true);
+				stratum_gen_work(&stratum, &g_work, false);
 				pthread_mutex_unlock(&g_work_lock);
 				restart_threads();
 				local_extranonce1_next = time(NULL) + opt_extranonce1_local_roll;
