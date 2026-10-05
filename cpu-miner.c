@@ -127,6 +127,41 @@ static uint32_t mt19937_random_nonce(int thr_id, uint32_t start_nonce,
 
 	return start_nonce + offset;
 }
+
+/* Dedicated Mersenne Twister stream for Stratum extranonce2. */
+static uint32_t mt_xnonce2_state[MT_N];
+static size_t mt_xnonce2_index = MT_N;
+static bool mt_xnonce2_initialized = false;
+
+static uint32_t mt19937_xnonce2_rand32(void)
+{
+	if (!mt_xnonce2_initialized) {
+		uint32_t seed = (uint32_t)time(NULL) ^
+			(uint32_t)(uintptr_t)mt_xnonce2_state ^ 0x6d2b79f5U;
+		mt19937_seed(mt_xnonce2_state, &mt_xnonce2_index, seed);
+		mt_xnonce2_initialized = true;
+	}
+	if (mt_xnonce2_index >= MT_N)
+		mt19937_twist(mt_xnonce2_state, &mt_xnonce2_index);
+
+	uint32_t y = mt_xnonce2_state[mt_xnonce2_index++];
+	y ^= y >> 11;
+	y ^= (y << 7) & 0x9d2c5680U;
+	y ^= (y << 15) & 0xefc60000U;
+	y ^= y >> 18;
+	return y;
+}
+
+static void stratum_randomize_xnonce2(struct stratum_ctx *sctx)
+{
+	size_t t = 0;
+	while (t < sctx->xnonce2_size) {
+		uint32_t r = mt19937_xnonce2_rand32();
+		size_t n = min((size_t)4, sctx->xnonce2_size - t);
+		memcpy(sctx->job.xnonce2 + t, &r, n);
+		t += n;
+	}
+}
 enum workio_commands {
 	WC_GET_WORK,
 	WC_SUBMIT_WORK,
@@ -1955,13 +1990,16 @@ err_out:
 	return false;
 }
 
-static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
+static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool randomize_xnonce2)
 {
 	uint32_t extraheader[32] = { 0 };
 	uchar merkle_root[64] = { 0 };
 	int i, headersize = 0;
 
 	pthread_mutex_lock(&sctx->work_lock);
+
+	if (!jsonrpc_2 && randomize_xnonce2)
+		stratum_randomize_xnonce2(sctx);
 
 	if (jsonrpc_2) {
 		work_free(work);
@@ -2009,9 +2047,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 				sha256d(merkle_root, merkle_root, 64);
 		}
 
-		/* Increment extranonce2 */
-		for (size_t t = 0; t < sctx->xnonce2_size && !(++sctx->job.xnonce2[t]); t++)
-			;
+		/* E2 is randomized before coinbase/merkle generation when requested. */
 
 		/* Assemble block header */
 		memset(work->data, 0, 128);
@@ -2338,7 +2374,7 @@ static void *miner_thread(void *userdata)
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
 			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work);
+				stratum_gen_work(&stratum, &g_work, true);
 			}
 
 		} else {
@@ -3163,7 +3199,7 @@ static void *stratum_thread(void *userdata)
 		if (stratum.curl && opt_extranonce1_local && stratum.xnonce1_size) {
 			if (stratum_apply_local_extranonce1()) {
 				pthread_mutex_lock(&g_work_lock);
-				stratum_gen_work(&stratum, &g_work);
+				stratum_gen_work(&stratum, &g_work, false);
 				pthread_mutex_unlock(&g_work_lock);
 				restart_threads();
 				if (!opt_quiet)
@@ -3175,7 +3211,7 @@ static void *stratum_thread(void *userdata)
 		if (stratum.curl && opt_extranonce1_local_roll && time(NULL) >= local_extranonce1_next) {
 			if (stratum_roll_local_extranonce1()) {
 				pthread_mutex_lock(&g_work_lock);
-				stratum_gen_work(&stratum, &g_work);
+				stratum_gen_work(&stratum, &g_work, true);
 				pthread_mutex_unlock(&g_work_lock);
 				restart_threads();
 				local_extranonce1_next = time(NULL) + opt_extranonce1_local_roll;
@@ -3206,7 +3242,8 @@ static void *stratum_thread(void *userdata)
 			(!g_work_time || strcmp(stratum.job.job_id, g_work.job_id)) )
 		{
 			pthread_mutex_lock(&g_work_lock);
-			stratum_gen_work(&stratum, &g_work);
+			stratum_gen_work(&stratum, &g_work,
+				!g_work_time || stratum.job.clean);
 			g_time_roll_work_generation++;
 			extranonce1_job_generation++;
 			extranonce1_nonce_exhausted = 0;
