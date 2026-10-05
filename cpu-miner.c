@@ -152,6 +152,7 @@ static uint32_t mt19937_xnonce2_rand32(void)
 	return y;
 }
 
+extern bool opt_extranonce2_randomize;
 extern int opt_extranonce2_randomize_bits;
 extern bool opt_extranonce2_randomize_increment;
 
