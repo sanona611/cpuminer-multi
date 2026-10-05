@@ -418,6 +418,7 @@ static bool opt_background = false;
 bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
+static uint32_t opt_randomize_range = 0;
 bool opt_extranonce2_randomize = false;
 bool opt_extranonce2_randomize_increment = false;
 int opt_extranonce2_randomize_bits = 0;
@@ -586,7 +587,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize       Randomize scan range start to reduce duplicates\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
+      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -670,7 +671,7 @@ static struct option const options[] = {
 	{ "quiet", 0, NULL, 'q' },
 	{ "retries", 1, NULL, 'r' },
 	{ "retry-pause", 1, NULL, 'R' },
-	{ "randomize", 0, NULL, 1024 },
+	{ "randomize", 2, NULL, 1024 },
 	{ "extranonce2-randomize", 2, NULL, 1069 },
 	{ "extranonce2-randomize++", 2, NULL, 1070 },
 	{ "timeroll", 0, NULL, 1065 },
@@ -2502,7 +2503,8 @@ static void *miner_thread(void *userdata)
 						thr_id, start_nonce, thread_end_nonce);
 					end_nonce = (uint32_t)(
 						(uint64_t)*nonceptr +
-						(uint64_t)thr_hashrates[thr_id]);
+						(opt_randomize_range ? opt_randomize_range :
+						(uint64_t)thr_hashrates[thr_id]));
 				}
 				nonce_initialized = true;
 				if (opt_debug)
@@ -3876,6 +3878,13 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1024:
 		opt_randomize = true;
+		if (arg && *arg) {
+			char *ep;
+			uint64_t range = strtoull(arg, &ep, 10);
+			if (*ep || range > UINT32_MAX || range == 0)
+				show_usage_and_exit(1);
+			opt_randomize_range = (uint32_t)range;
+		}
 		break;
 	case 1069:
 		opt_extranonce2_randomize = true;
@@ -3985,7 +3994,7 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
-		if ((key == 1064 || key == 1066 || key == 1069 || key == 1070) && optind < argc && argv[optind][0] != '-' &&
+		if ((key == 1024 || key == 1064 || key == 1066 || key == 1069 || key == 1070) && optind < argc && argv[optind][0] != '-' &&
 		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
 			parse_arg(key, argv[optind]);
 			optind++;
