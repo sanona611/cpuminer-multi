@@ -154,17 +154,29 @@ static uint32_t mt19937_xnonce2_rand32(void)
 
 extern int opt_extranonce2_randomize_bits;
 
-static void stratum_randomize_xnonce2(struct stratum_ctx *sctx)
+static bool mt_xnonce2_increment_initialized = false;
+
+static int stratum_xnonce2_bits(const struct stratum_ctx *sctx)
 {
 	int bits = opt_extranonce2_randomize_bits;
-	size_t bytes;
 
 	if (bits <= 0)
 		bits = (int)(sctx->xnonce2_size * 8);
+	return bits;
+}
 
-	bytes = (size_t)((bits + 7) / 8);
+static size_t stratum_xnonce2_bytes(const struct stratum_ctx *sctx, int bits)
+{
+	size_t bytes = (size_t)((bits + 7) / 8);
 	if (bytes > sctx->xnonce2_size)
 		bytes = sctx->xnonce2_size;
+	return bytes;
+}
+
+static void stratum_randomize_xnonce2(struct stratum_ctx *sctx)
+{
+	int bits = stratum_xnonce2_bits(sctx);
+	size_t bytes = stratum_xnonce2_bytes(sctx, bits);
 
 	memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
 	for (size_t t = 0; t < bytes; ) {
@@ -180,7 +192,38 @@ static void stratum_randomize_xnonce2(struct stratum_ctx *sctx)
 			sctx->job.xnonce2[bytes - 1] &= (uchar)((1U << used) - 1U);
 	}
 }
-enum workio_commands {
+
+static void stratum_increment_xnonce2(struct stratum_ctx *sctx)
+{
+	int bits = stratum_xnonce2_bits(sctx);
+	size_t bytes = stratum_xnonce2_bytes(sctx, bits);
+	size_t i;
+	unsigned int used;
+
+	for (i = 0; i < bytes; i++) {
+		sctx->job.xnonce2[i]++;
+		if (sctx->job.xnonce2[i] != 0)
+			break;
+	}
+
+	used = (unsigned int)(bits & 7);
+	if (used && bytes)
+		sctx->job.xnonce2[bytes - 1] &= (uchar)((1U << used) - 1U);
+}
+
+static void stratum_update_xnonce2(struct stratum_ctx *sctx)
+{
+	if (opt_extranonce2_randomize_increment) {
+		if (!mt_xnonce2_increment_initialized) {
+			stratum_randomize_xnonce2(sctx);
+			mt_xnonce2_increment_initialized = true;
+		} else {
+			stratum_increment_xnonce2(sctx);
+		}
+	} else {
+		stratum_randomize_xnonce2(sctx);
+	}
+}enum workio_commands {
 	WC_GET_WORK,
 	WC_SUBMIT_WORK,
 };
@@ -363,6 +406,7 @@ bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
 bool opt_extranonce2_randomize = false;
+bool opt_extranonce2_randomize_increment = false;
 int opt_extranonce2_randomize_bits = 0;
 int opt_extranonce1_reconnect = 0;
 static volatile int extranonce1_nonce_exhausted = 0;
@@ -529,7 +573,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize       Randomize scan range start to reduce duplicates\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
+      --randomize       Randomize scan range start to reduce duplicates\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -615,6 +659,7 @@ static struct option const options[] = {
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 0, NULL, 1024 },
 	{ "extranonce2-randomize", 2, NULL, 1069 },
+	{ "extranonce2-randomize++", 2, NULL, 1070 },
 	{ "timeroll", 0, NULL, 1065 },
 	{ "extranonce1-reconnect", 2, NULL, 1066 },
 	{ "extranonce1-local", 1, NULL, 1067 },
@@ -2020,7 +2065,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool r
 	pthread_mutex_lock(&sctx->work_lock);
 
 	if (!jsonrpc_2 && randomize_xnonce2)
-		stratum_randomize_xnonce2(sctx);
+		stratum_update_xnonce2(sctx);
 
 	if (jsonrpc_2) {
 		work_free(work);
@@ -3819,6 +3864,17 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1069:
 		opt_extranonce2_randomize = true;
+		opt_extranonce2_randomize_increment = false;
+		if (arg && *arg) {
+			v = atoi(arg);
+			if (v != 8 && v != 16 && v != 32)
+				show_usage_and_exit(1);
+			opt_extranonce2_randomize_bits = v;
+		}
+		break;
+	case 1070:
+		opt_extranonce2_randomize = true;
+		opt_extranonce2_randomize_increment = true;
 		if (arg && *arg) {
 			v = atoi(arg);
 			if (v != 8 && v != 16 && v != 32)
@@ -3914,7 +3970,7 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
-		if ((key == 1064 || key == 1066 || key == 1069) && optind < argc && argv[optind][0] != '-' &&
+		if ((key == 1064 || key == 1066 || key == 1069 || key == 1070) && optind < argc && argv[optind][0] != '-' &&
 		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
 			parse_arg(key, argv[optind]);
 			optind++;
