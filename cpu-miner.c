@@ -194,34 +194,45 @@ static void stratum_randomize_xnonce2(struct stratum_ctx *sctx)
 	}
 }
 
-static void stratum_increment_xnonce2(struct stratum_ctx *sctx)
+static bool stratum_increment_xnonce2(struct stratum_ctx *sctx)
 {
 	int bits = stratum_xnonce2_bits(sctx);
 	size_t bytes = stratum_xnonce2_bytes(sctx, bits);
-	size_t i;
+	int i;
 	unsigned int used;
 
-	for (i = 0; i < bytes; i++) {
-		sctx->job.xnonce2[i]++;
-		if (sctx->job.xnonce2[i] != 0)
+	/* E2 is displayed as a big-endian hex string. Increment from the
+	 * rightmost byte so the visible value really does increase by one. */
+	for (i = (int)bytes - 1; i >= 0; i--) {
+		if (++sctx->job.xnonce2[i] != 0)
 			break;
 	}
 
 	used = (unsigned int)(bits & 7);
 	if (used && bytes)
-		sctx->job.xnonce2[bytes - 1] &= (uchar)((1U << used) - 1U);
+		sctx->job.xnonce2[0] &= (uchar)((1U << used) - 1U);
+
+	/* Overflow means the selected E2 width has reached its maximum. */
+	return i < 0;
 }
 
-static void stratum_update_xnonce2(struct stratum_ctx *sctx)
+static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 {
+	if (!opt_extranonce2_randomize)
+		return;
+
+	if (!mt_xnonce2_increment_initialized || new_block) {
+		stratum_randomize_xnonce2(sctx);
+		mt_xnonce2_increment_initialized = true;
+		return;
+	}
+
 	if (opt_extranonce2_randomize_increment) {
-		if (!mt_xnonce2_increment_initialized) {
+		if (stratum_increment_xnonce2(sctx))
 			stratum_randomize_xnonce2(sctx);
-			mt_xnonce2_increment_initialized = true;
-		} else {
-			stratum_increment_xnonce2(sctx);
-		}
 	} else {
+		/* Plain randomize mode gets a fresh random E2 whenever work is
+		 * regenerated because of nonce exhaustion. */
 		stratum_randomize_xnonce2(sctx);
 	}
 }enum workio_commands {
@@ -1288,26 +1299,28 @@ static void shareinfo_get_time_nonce(const struct work *work, uint32_t *ntime, u
 {
 	switch (opt_algo) {
 	case ALGO_DECRED:
-		be32enc(ntime, work->data[34]);
-		be32enc(nonce, work->data[35]);
+		*ntime = work->data[34];
+		*nonce = work->data[35];
 		break;
 	case ALGO_LBRY:
-		le32enc(ntime, work->data[25]);
-		le32enc(nonce, work->data[27]);
+		*ntime = work->data[25];
+		*nonce = work->data[27];
 		break;
 	case ALGO_DROP:
 	case ALGO_NEOSCRYPT:
 	case ALGO_ZR5:
-		be32enc(ntime, work->data[17]);
-		be32enc(nonce, work->data[19]);
+		*ntime = work->data[17];
+		*nonce = work->data[19];
 		break;
 	case ALGO_SIA:
-		be32enc(ntime, work->data[10]);
-		be32enc(nonce, work->data[8]);
+		*ntime = work->data[10];
+		*nonce = work->data[8];
 		break;
 	default:
-		le32enc(ntime, work->data[17]);
-		le32enc(nonce, work->data[19]);
+		/* Keep shareinfo in the same host-order representation used by
+		 * the SUBMIT debug line. */
+		*ntime = work->data[17];
+		*nonce = work->data[19];
 		break;
 	}
 }
@@ -2066,7 +2079,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool r
 	pthread_mutex_lock(&sctx->work_lock);
 
 	if (!jsonrpc_2 && randomize_xnonce2)
-		stratum_update_xnonce2(sctx);
+		stratum_update_xnonce2(sctx, sctx->job.clean);
 
 	if (jsonrpc_2) {
 		work_free(work);
@@ -2441,7 +2454,7 @@ static void *miner_thread(void *userdata)
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
 			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work, opt_extranonce2_randomize && regen_work);
+				stratum_gen_work(&stratum, &g_work, opt_extranonce2_randomize && regen_work && !stratum.job.clean);
 			}
 
 		} else {
