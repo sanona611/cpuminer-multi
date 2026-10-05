@@ -2454,7 +2454,7 @@ static void *miner_thread(void *userdata)
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
 			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work, opt_extranonce2_randomize && regen_work && !stratum.job.clean);
+				stratum_gen_work(&stratum, &g_work, opt_extranonce2_randomize && regen_work);
 			}
 
 		} else {
