@@ -47,6 +47,7 @@
 extern pthread_mutex_t stats_lock;
 extern bool opt_vroll;
 extern int opt_vroll_interval;
+extern bool opt_vroll_shift;
 
 struct data_buffer {
 	void		*buf;
@@ -1361,6 +1362,8 @@ extern bool opt_extranonce;
 
 static uint32_t vroll_mt[624];
 static int vroll_mt_index = 624;
+static uint32_t vroll_shift_start_bits = 0;
+static bool vroll_shift_start_valid = false;
 
 static void vroll_mt_seed(uint32_t seed)
 {
@@ -1422,9 +1425,32 @@ static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work
 	    (sctx->rolled_version & ~internal_mask) != (base & ~internal_mask) ||
 	    (opt_vroll_interval > 0 && now >= sctx->vroll_last + opt_vroll_interval)) {
 		uint32_t bits;
-		do {
-			bits = vroll_mt_rand() & sctx->version_mask;
-		} while (!bits && sctx->version_mask);
+		if (opt_vroll_shift && sctx->rolled_version &&
+		    sctx->vroll_block_height == sctx->bloc_height) {
+			bits = swab32(sctx->rolled_version) & sctx->version_mask;
+			uint32_t next = 0;
+			int nibble;
+			for (nibble = 0; nibble < 8; nibble++) {
+				uint32_t shift = (uint32_t)nibble * 4U;
+				uint32_t nib = (bits >> shift) & 0x0fU;
+				uint32_t mask_nib = (sctx->version_mask >> shift) & 0x0fU;
+				uint32_t shifted = ((nib + 1U) & 0x0fU) & mask_nib;
+				next |= shifted << shift;
+			}
+			bits = next & sctx->version_mask;
+			if (vroll_shift_start_valid && bits == vroll_shift_start_bits) {
+				do {
+					bits = vroll_mt_rand() & sctx->version_mask;
+				} while ((!bits || bits == vroll_shift_start_bits) && sctx->version_mask);
+				vroll_shift_start_bits = bits;
+			}
+		} else {
+			do {
+				bits = vroll_mt_rand() & sctx->version_mask;
+			} while (!bits && sctx->version_mask);
+			vroll_shift_start_bits = bits;
+			vroll_shift_start_valid = true;
+		}
 		uint32_t internal_bits = swab32(bits);
 
 		sctx->rolled_version = (base & ~internal_mask) |
