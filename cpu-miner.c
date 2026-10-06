@@ -466,6 +466,7 @@ bool opt_extranonce = true;
 bool opt_shareinfo = false;
 bool opt_vroll = false;
 int opt_vroll_interval = 0;
+bool opt_vroll_shift = false;
 bool opt_timeroll = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
@@ -715,6 +716,7 @@ static struct option const options[] = {
 	{ "debug", 0, NULL, 'D' },
 	{ "shareinfo", 0, NULL, 1063 },
 	{ "vroll", 2, NULL, 1064 },
+	{ "vroll+", 2, NULL, 1072 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
 	{ "diff-multiplier", 1, NULL, 'm' },
@@ -3984,6 +3986,16 @@ void parse_arg(int key, char *arg)
 			opt_extranonce2_randomize_bits = v;
 		}
 		break;
+	case 1072:
+		opt_vroll = true;
+		opt_vroll_interval = 0;
+		opt_vroll_shift = true;
+		if (arg && *arg) {
+			v = atoi(arg);
+			if (v < 0) show_usage_and_exit(1);
+			opt_vroll_interval = v;
+		}
+		break;
 	case 1065:
 		opt_timeroll = true;
 		break;
@@ -4072,7 +4084,7 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
-		if ((key == 1024 || key == 1064 || key == 1066 || key == 1069 || key == 1070 || key == 1071) && optind < argc && argv[optind][0] != '-' &&
+		if ((key == 1024 || key == 1064 || key == 1066 || key == 1069 || key == 1070 || key == 1071 || key == 1072) && optind < argc && argv[optind][0] != '-' &&
 		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
 			parse_arg(key, argv[optind]);
 			optind++;
