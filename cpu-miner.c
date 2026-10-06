@@ -306,8 +306,11 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 		/* Plain randomize mode gets a fresh random E2 whenever work is
 		 * regenerated because of nonce exhaustion. */
 		stratum_randomize_xnonce2(sctx);
+		mt_xnonce2_last_randomized = true;
 	}
-}enum workio_commands {
+}
+
+enum workio_commands {
 	WC_GET_WORK,
 	WC_SUBMIT_WORK,
 };
