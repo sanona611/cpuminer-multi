@@ -294,8 +294,6 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 		mt_xnonce2_increment_initialized = true;
 		mt_xnonce2_last_randomized = true;
 		mt_xnonce2_nonce_static_changes = 0;
-		if (!opt_extranonce2_randomize_shift)
-			mt_xnonce2_nonce_static_refresh = true;
 		return;
 	}
 
@@ -2196,8 +2194,12 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool r
 
 	pthread_mutex_lock(&sctx->work_lock);
 
-	if (!jsonrpc_2 && randomize_xnonce2)
+	if (!jsonrpc_2 && randomize_xnonce2) {
 		stratum_update_xnonce2(sctx, sctx->job.clean);
+		if (mt_xnonce2_nonce_static_refresh && opt_vroll &&
+		    sctx->version_rolling)
+			stratum_vroll_force_update_locked(sctx, work);
+	}
 
 	if (jsonrpc_2) {
 		work_free(work);
@@ -2559,15 +2561,6 @@ static void *miner_thread(void *userdata)
 					applog(LOG_DEBUG, "Stratum timeroll unix_ntime=%08x",
 						g_time_roll_last_unix_time);
 				restart_threads();
-			}
-
-			if (opt_vroll && stratum.version_rolling &&
-			    (nonce_exhausted_now || stratum_vroll_due(&stratum))) {
-				bool rolled = nonce_exhausted_now
-					? stratum_vroll_force_update_locked(&stratum, &g_work)
-					: stratum_vroll_update(&stratum, &g_work);
-				if (rolled)
-					restart_threads();
 			}
 
 			// to clean: is g_work loaded before the memcmp ?
