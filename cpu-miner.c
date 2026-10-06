@@ -158,6 +158,7 @@ extern bool opt_extranonce2_randomize_increment;
 extern bool opt_extranonce2_randomize_shift;
 
 static bool mt_xnonce2_increment_initialized = false;
+static bool mt_xnonce2_last_randomized = false;
 static unsigned char mt_xnonce2_cycle_start[64];
 static size_t mt_xnonce2_cycle_bytes = 0;
 static bool mt_xnonce2_cycle_start_valid = false;
@@ -276,6 +277,8 @@ static void stratum_randomize_xnonce2_distinct(struct stratum_ctx *sctx)
 
 static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 {
+	mt_xnonce2_last_randomized = false;
+
 	if (!opt_extranonce2_randomize)
 		return;
 
@@ -285,15 +288,20 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 		else
 			stratum_randomize_xnonce2(sctx);
 		mt_xnonce2_increment_initialized = true;
+		mt_xnonce2_last_randomized = true;
 		return;
 	}
 
 	if (opt_extranonce2_randomize_shift) {
-		if (stratum_shift_xnonce2(sctx))
+		if (stratum_shift_xnonce2(sctx)) {
 			stratum_randomize_xnonce2_distinct(sctx);
+			mt_xnonce2_last_randomized = true;
+		}
 	} else if (opt_extranonce2_randomize_increment) {
-		if (stratum_increment_xnonce2(sctx))
+		if (stratum_increment_xnonce2(sctx)) {
 			stratum_randomize_xnonce2(sctx);
+			mt_xnonce2_last_randomized = true;
+		}
 	} else {
 		/* Plain randomize mode gets a fresh random E2 whenever work is
 		 * regenerated because of nonce exhaustion. */
@@ -468,6 +476,7 @@ bool opt_vroll = false;
 int opt_vroll_interval = 0;
 bool opt_vroll_shift = false;
 bool opt_timeroll = false;
+bool opt_nonce_static = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool have_gbt = true;
@@ -652,8 +661,10 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\
-      --extranonce2-randomize+++[=BITS] Random start, then shift each hex nibble +1 (8, 16, 32 bits; default: full size)\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
+      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n\
+      --extranonce2-randomize+++[=BITS] Random start, then shift each hex nibble +1 (8, 16, 32 bits; default: full size)\n\
+      --nonce-static        Keep the same random nonce chunk while E2+++ advances through its 16 states\n\
+      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -743,6 +754,7 @@ static struct option const options[] = {
 	{ "extranonce2-randomize++", 2, NULL, 1070 },
 	{ "extranonce2-randomize+++", 2, NULL, 1071 },
 	{ "timeroll", 0, NULL, 1065 },
+	{ "nonce-static", 0, NULL, 1073 },
 	{ "extranonce1-reconnect", 2, NULL, 1066 },
 	{ "extranonce1-local", 1, NULL, 1067 },
 	{ "extranonce1-local-roll", 1, NULL, 1068 },
@@ -2381,6 +2393,9 @@ static void *miner_thread(void *userdata)
 	uint32_t max_nonce;
 	uint32_t end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
 	bool nonce_initialized = false;
+	uint32_t nonce_static_start = 0;
+	uint32_t nonce_static_end = 0;
+	bool nonce_static_valid = false;
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2565,14 +2580,29 @@ static void *miner_thread(void *userdata)
 					0xffffffffU / opt_n_threads * thr_id;
 				const uint32_t thread_end_nonce =
 					0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
-				*nonceptr = start_nonce;
-				if (opt_randomize) {
-					*nonceptr = mt19937_random_nonce(
-						thr_id, start_nonce, thread_end_nonce);
-					end_nonce = (uint32_t)(
-						(uint64_t)*nonceptr +
-						(opt_randomize_range ? opt_randomize_range :
-						(uint64_t)thr_hashrates[thr_id]));
+				bool keep_static_chunk = opt_nonce_static &&
+					opt_extranonce2_randomize && nonce_static_valid &&
+					!mt_xnonce2_last_randomized;
+
+				if (keep_static_chunk) {
+					*nonceptr = nonce_static_start;
+					end_nonce = nonce_static_end;
+				} else {
+					*nonceptr = start_nonce;
+					if (opt_randomize) {
+						*nonceptr = mt19937_random_nonce(
+							thr_id, start_nonce, thread_end_nonce);
+						end_nonce = (uint32_t)(
+							(uint64_t)*nonceptr +
+							(opt_randomize_range ? opt_randomize_range :
+							(uint64_t)thr_hashrates[thr_id]));
+					}
+
+					if (opt_nonce_static && opt_extranonce2_randomize) {
+						nonce_static_start = *nonceptr;
+						nonce_static_end = end_nonce;
+						nonce_static_valid = true;
+					}
 				}
 				nonce_initialized = true;
 				if (opt_debug)
@@ -3999,6 +4029,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1065:
 		opt_timeroll = true;
+		break;
+	case 1073:
+		opt_nonce_static = true;
 		break;
 	case 1066:
 		if (!arg || !*arg) {
