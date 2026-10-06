@@ -155,8 +155,12 @@ static uint32_t mt19937_xnonce2_rand32(void)
 extern bool opt_extranonce2_randomize;
 extern int opt_extranonce2_randomize_bits;
 extern bool opt_extranonce2_randomize_increment;
+extern bool opt_extranonce2_randomize_shift;
 
 static bool mt_xnonce2_increment_initialized = false;
+static unsigned char mt_xnonce2_cycle_start[64];
+static size_t mt_xnonce2_cycle_bytes = 0;
+static bool mt_xnonce2_cycle_start_valid = false;
 
 static int stratum_xnonce2_bits(const struct stratum_ctx *sctx)
 {
@@ -217,18 +221,77 @@ static bool stratum_increment_xnonce2(struct stratum_ctx *sctx)
 	return i < 0;
 }
 
+static bool stratum_shift_xnonce2(struct stratum_ctx *sctx)
+{
+	int bits = stratum_xnonce2_bits(sctx);
+	size_t bytes = stratum_xnonce2_bytes(sctx, bits);
+	size_t t;
+
+	/* Advance every hexadecimal nibble by one, wrapping each nibble
+	 * independently: 1234abcd -> 2345bcde -> 3456cdef -> ... */
+	for (t = 0; t < bytes; t++) {
+		unsigned int hi = ((sctx->job.xnonce2[t] >> 4) + 1U) & 0x0fU;
+		unsigned int lo = ((sctx->job.xnonce2[t] & 0x0fU) + 1U) & 0x0fU;
+		sctx->job.xnonce2[t] = (uchar)((hi << 4) | lo);
+	}
+
+	if (mt_xnonce2_cycle_start_valid &&
+	    bytes == mt_xnonce2_cycle_bytes &&
+	    !memcmp(sctx->job.xnonce2, mt_xnonce2_cycle_start, bytes))
+		return true;
+
+	return false;
+}
+
+static void stratum_randomize_xnonce2_distinct(struct stratum_ctx *sctx)
+{
+	int bits = stratum_xnonce2_bits(sctx);
+	size_t bytes = stratum_xnonce2_bytes(sctx, bits);
+	size_t t;
+	int tries = 0;
+
+	do {
+		stratum_randomize_xnonce2(sctx);
+		tries++;
+	} while (mt_xnonce2_cycle_start_valid &&
+		 bytes == mt_xnonce2_cycle_bytes &&
+		 !memcmp(sctx->job.xnonce2, mt_xnonce2_cycle_start, bytes) &&
+		 tries < 32);
+
+	if (mt_xnonce2_cycle_start_valid &&
+	    bytes == mt_xnonce2_cycle_bytes &&
+	    !memcmp(sctx->job.xnonce2, mt_xnonce2_cycle_start, bytes)) {
+		memcpy(sctx->job.xnonce2, mt_xnonce2_cycle_start, bytes);
+		for (t = 0; t < bytes; t++) {
+			unsigned int hi = ((sctx->job.xnonce2[t] >> 4) + 1U) & 0x0fU;
+			unsigned int lo = ((sctx->job.xnonce2[t] & 0x0fU) + 1U) & 0x0fU;
+			sctx->job.xnonce2[t] = (uchar)((hi << 4) | lo);
+		}
+	}
+
+	memcpy(mt_xnonce2_cycle_start, sctx->job.xnonce2, bytes);
+	mt_xnonce2_cycle_bytes = bytes;
+	mt_xnonce2_cycle_start_valid = true;
+}
+
 static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 {
 	if (!opt_extranonce2_randomize)
 		return;
 
 	if (!mt_xnonce2_increment_initialized || new_block) {
-		stratum_randomize_xnonce2(sctx);
+		if (opt_extranonce2_randomize_shift)
+			stratum_randomize_xnonce2_distinct(sctx);
+		else
+			stratum_randomize_xnonce2(sctx);
 		mt_xnonce2_increment_initialized = true;
 		return;
 	}
 
-	if (opt_extranonce2_randomize_increment) {
+	if (opt_extranonce2_randomize_shift) {
+		if (stratum_shift_xnonce2(sctx))
+			stratum_randomize_xnonce2_distinct(sctx);
+	} else if (opt_extranonce2_randomize_increment) {
 		if (stratum_increment_xnonce2(sctx))
 			stratum_randomize_xnonce2(sctx);
 	} else {
@@ -421,6 +484,7 @@ bool opt_randomize = false;
 static uint32_t opt_randomize_range = 0;
 bool opt_extranonce2_randomize = false;
 bool opt_extranonce2_randomize_increment = false;
+bool opt_extranonce2_randomize_shift = false;
 int opt_extranonce2_randomize_bits = 0;
 int opt_extranonce1_reconnect = 0;
 static volatile int extranonce1_nonce_exhausted = 0;
@@ -587,7 +651,8 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
+      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\
+      --extranonce2-randomize+++[=BITS] Random start, then shift each hex nibble +1 (8, 16, 32 bits; default: full size)\n      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -674,6 +739,7 @@ static struct option const options[] = {
 	{ "randomize", 2, NULL, 1024 },
 	{ "extranonce2-randomize", 2, NULL, 1069 },
 	{ "extranonce2-randomize++", 2, NULL, 1070 },
+	{ "extranonce2-randomize+++", 2, NULL, 1071 },
 	{ "timeroll", 0, NULL, 1065 },
 	{ "extranonce1-reconnect", 2, NULL, 1066 },
 	{ "extranonce1-local", 1, NULL, 1067 },
@@ -3899,6 +3965,18 @@ void parse_arg(int key, char *arg)
 	case 1070:
 		opt_extranonce2_randomize = true;
 		opt_extranonce2_randomize_increment = true;
+		opt_extranonce2_randomize_shift = false;
+		if (arg && *arg) {
+			v = atoi(arg);
+			if (v != 8 && v != 16 && v != 32)
+				show_usage_and_exit(1);
+			opt_extranonce2_randomize_bits = v;
+		}
+		break;
+	case 1071:
+		opt_extranonce2_randomize = true;
+		opt_extranonce2_randomize_increment = false;
+		opt_extranonce2_randomize_shift = true;
 		if (arg && *arg) {
 			v = atoi(arg);
 			if (v != 8 && v != 16 && v != 32)
@@ -3994,7 +4072,7 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
-		if ((key == 1024 || key == 1064 || key == 1066 || key == 1069 || key == 1070) && optind < argc && argv[optind][0] != '-' &&
+		if ((key == 1024 || key == 1064 || key == 1066 || key == 1069 || key == 1070 || key == 1071) && optind < argc && argv[optind][0] != '-' &&
 		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
 			parse_arg(key, argv[optind]);
 			optind++;
