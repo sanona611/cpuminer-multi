@@ -3864,6 +3864,7 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1064:
 		opt_vroll = true;
+		opt_vroll_shift = false;
 		opt_vroll_interval = 0;
 		if (arg && *arg) {
 			v = atoi(arg);
