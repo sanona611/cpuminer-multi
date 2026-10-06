@@ -1422,8 +1422,7 @@ static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work
 	if (force ||
 	    !sctx->rolled_version ||
 	    sctx->vroll_block_height != sctx->bloc_height ||
-	    (sctx->rolled_version & ~internal_mask) != (base & ~internal_mask) ||
-	    (opt_vroll_interval > 0 && now >= sctx->vroll_last + opt_vroll_interval)) {
+	    (sctx->rolled_version & ~internal_mask) != (base & ~internal_mask)) {
 		uint32_t bits;
 		if (opt_vroll_shift && sctx->rolled_version &&
 		    sctx->vroll_block_height == sctx->bloc_height) {
@@ -1461,8 +1460,7 @@ static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work
 		if (opt_debug)
 			applog(LOG_DEBUG, "Stratum rolled version=%08x bits=%08x mask=%08x%s",
 				sctx->rolled_version, bits, sctx->version_mask,
-				force ? " (nonce exhausted)" :
-				(opt_vroll_interval > 0 ? " (timed)" : " (new block)"));
+				force ? " (nonce chunk)" : " (new block/start)");
 		if (work)
 			work->version_bits = bits;
 	}
