@@ -156,6 +156,7 @@ extern bool opt_extranonce2_randomize;
 extern int opt_extranonce2_randomize_bits;
 extern bool opt_extranonce2_randomize_increment;
 extern bool opt_extranonce2_randomize_shift;
+extern uint64_t opt_nonce_static;
 
 static bool mt_xnonce2_increment_initialized = false;
 static bool mt_xnonce2_last_randomized = false;
