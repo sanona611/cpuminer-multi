@@ -300,16 +300,31 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 	}
 
 	if (opt_extranonce2_randomize_shift) {
+		/* Keep the existing +++ cycle unchanged. */
 		if (stratum_shift_xnonce2(sctx)) {
 			stratum_randomize_xnonce2_distinct(sctx);
 			mt_xnonce2_last_randomized = true;
 		}
 	} else if (opt_extranonce2_randomize_increment) {
-		if (stratum_increment_xnonce2(sctx)) {
+		/* In ++ mode, N E2 changes belong to the current nonce chunk.
+		 * The Nth change is the boundary: start a new nonce chunk and
+		 * choose a completely new random E2 instead of continuing ++. */
+		if (opt_nonce_static &&
+		    mt_xnonce2_nonce_static_changes + 1 >= opt_nonce_static) {
 			stratum_randomize_xnonce2(sctx);
 			mt_xnonce2_last_randomized = true;
+			mt_xnonce2_nonce_static_changes = 0;
+			mt_xnonce2_nonce_static_refresh = true;
+		} else if (stratum_increment_xnonce2(sctx)) {
+			/* The selected E2 width was exhausted before N changes.
+			 * Start a new E2 cycle and a new nonce chunk. */
+			stratum_randomize_xnonce2(sctx);
+			mt_xnonce2_last_randomized = true;
+			mt_xnonce2_nonce_static_changes = 0;
+			mt_xnonce2_nonce_static_refresh = true;
 		} else {
 			mt_xnonce2_last_randomized = true;
+			mt_xnonce2_nonce_static_changes++;
 		}
 	} else {
 		/* Plain randomize mode gets a fresh random E2 whenever work is
@@ -318,10 +333,11 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 		mt_xnonce2_last_randomized = true;
 	}
 
-	if (!opt_extranonce2_randomize_shift && mt_xnonce2_last_randomized &&
-	    opt_nonce_static) {
-		if (++mt_xnonce2_nonce_static_changes > opt_nonce_static) {
-			mt_xnonce2_nonce_static_changes = 1;
+	if (!opt_extranonce2_randomize_shift &&
+	    !opt_extranonce2_randomize_increment &&
+	    mt_xnonce2_last_randomized && opt_nonce_static) {
+		if (++mt_xnonce2_nonce_static_changes >= opt_nonce_static) {
+			mt_xnonce2_nonce_static_changes = 0;
 			mt_xnonce2_nonce_static_refresh = true;
 		}
 	}
