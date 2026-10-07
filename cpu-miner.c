@@ -2642,7 +2642,7 @@ static void *miner_thread(void *userdata)
 		}
 		if (work_changed ||
 			memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
-			jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0)
+			(jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0))
 		{
 			uint32_t old_nonce = *nonceptr;
 			bool nonce_exhausted = nonce_initialized && old_nonce >= end_nonce;
