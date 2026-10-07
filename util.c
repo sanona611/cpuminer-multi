@@ -1990,6 +1990,8 @@ static bool stratum_set_difficulty(struct stratum_ctx *sctx, json_t *params)
 
 	pthread_mutex_lock(&sctx->work_lock);
 	sctx->next_diff = diff;
+	sctx->job.diff = diff;
+	sctx->difficulty_changed = true;
 	pthread_mutex_unlock(&sctx->work_lock);
 
 	return true;
