@@ -301,19 +301,21 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 				memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
 				mt_xnonce2_nonce_static_changes = 0;
 			} else {
-				/* Advance E2 for every regenerated work item. */
-				if (stratum_increment_xnonce2(sctx)) {
-					/* E2 width exhausted: wrap to zero and start a
-					 * fresh nonce chunk. */
+				/* Advance E2 within the current nonce chunk.  When the
+				 * static chunk is exhausted, the next chunk must always
+				 * start its E2 counter from zero. */
+				if (mt_xnonce2_nonce_static_changes + 1 >= opt_nonce_static) {
+					memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
+					mt_xnonce2_nonce_static_changes = 0;
+					mt_xnonce2_nonce_static_refresh = true;
+				} else if (stratum_increment_xnonce2(sctx)) {
+					/* E2 is still a full 64-bit counter.  Overflow is
+					 * handled by starting the next chunk at zero. */
 					memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
 					mt_xnonce2_nonce_static_changes = 0;
 					mt_xnonce2_nonce_static_refresh = true;
 				} else {
 					mt_xnonce2_nonce_static_changes++;
-					if (mt_xnonce2_nonce_static_changes >= opt_nonce_static) {
-						mt_xnonce2_nonce_static_changes = 0;
-						mt_xnonce2_nonce_static_refresh = true;
-					}
 				}
 			}
 		}
