@@ -448,6 +448,7 @@ struct stratum_ctx {
 
 	double next_diff;
 	double sharediff;
+	bool difficulty_changed;
 
 	char *session_id;
 	size_t xnonce1_size;
