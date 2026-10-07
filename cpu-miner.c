@@ -286,16 +286,35 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 	mt_xnonce2_nonce_static_refresh = false;
 
 	if (!opt_extranonce2_randomize) {
-		/* With factory E2, --nonce-static still works when --randomize
-		 * is active: keep the same random nonce chunk for N work
-		 * regenerations, then select a new random chunk. */
+		/* Factory E2 + --randomize --nonce-static:
+		 * E2 is the work counter. Keep the nonce chunk fixed while
+		 * advancing E2 through 0, 1, 2, ...; after N E2 changes,
+		 * select a new nonce chunk. */
 		if (opt_randomize && opt_nonce_static) {
-			if (!mt_xnonce2_increment_initialized || new_block) {
+			if (!mt_xnonce2_increment_initialized) {
+				/* Start the factory E2 counter at zero. */
+				memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
 				mt_xnonce2_increment_initialized = true;
 				mt_xnonce2_nonce_static_changes = 0;
-			} else if (++mt_xnonce2_nonce_static_changes >= opt_nonce_static) {
+			} else if (new_block) {
+				/* Start a fresh E2 counter for a new block. */
+				memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
 				mt_xnonce2_nonce_static_changes = 0;
-				mt_xnonce2_nonce_static_refresh = true;
+			} else {
+				/* Advance E2 for every regenerated work item. */
+				if (stratum_increment_xnonce2(sctx)) {
+					/* E2 width exhausted: wrap to zero and start a
+					 * fresh nonce chunk. */
+					memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
+					mt_xnonce2_nonce_static_changes = 0;
+					mt_xnonce2_nonce_static_refresh = true;
+				} else {
+					mt_xnonce2_nonce_static_changes++;
+					if (mt_xnonce2_nonce_static_changes >= opt_nonce_static) {
+						mt_xnonce2_nonce_static_changes = 0;
+						mt_xnonce2_nonce_static_refresh = true;
+					}
+				}
 			}
 		}
 		return;
