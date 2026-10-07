@@ -2232,8 +2232,9 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool r
 
 	if (!jsonrpc_2 && randomize_xnonce2) {
 		stratum_update_xnonce2(sctx, sctx->job.clean);
-		if (mt_xnonce2_nonce_static_refresh && opt_vroll &&
-		    sctx->version_rolling)
+		if (opt_vroll && sctx->version_rolling &&
+		    (mt_xnonce2_nonce_static_refresh ||
+		     (opt_randomize && !opt_nonce_static)))
 			stratum_vroll_force_update_locked(sctx, work);
 	}
 
@@ -2615,7 +2616,7 @@ static void *miner_thread(void *userdata)
 			if (regen_work) {
 				stratum_gen_work(&stratum, &g_work,
 					(opt_extranonce2_randomize ||
-					 (opt_randomize && opt_nonce_static)) && nonce_exhausted_now);
+					 opt_randomize) && nonce_exhausted_now);
 				work_changed = true;
 			}
 
