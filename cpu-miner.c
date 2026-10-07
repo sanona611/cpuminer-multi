@@ -734,7 +734,7 @@ Options:\n\
       --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n\
       --extranonce2-randomize+++[=BITS] Random start, then shift each hex nibble +1 (8, 16, 32 bits; default: full size)\n\
       --nonce-static[=N]   Keep the same random nonce chunk for N E2 changes; ignored for E2+++ (its 16-state logic is unchanged)\n\
-      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on nonce exhaustion/clean job when N is omitted\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
+      --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on a new block when N is omitted\n      --extranonce1-reconnect-nonce  Reconnect when all miner threads exhaust their nonce ranges\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -826,6 +826,7 @@ static struct option const options[] = {
 	{ "timeroll", 0, NULL, 1065 },
 	{ "nonce-static", 2, NULL, 1073 },
 	{ "extranonce1-reconnect", 2, NULL, 1066 },
+	{ "extranonce1-reconnect-nonce", 0, NULL, 1074 },
 	{ "extranonce1-local", 1, NULL, 1067 },
 	{ "extranonce1-local-roll", 1, NULL, 1068 },
 	{ "scantime", 1, NULL, 's' },
@@ -3127,6 +3128,18 @@ static void *miner_thread(void *userdata)
 		}
 
 
+		/* --extranonce1-reconnect-nonce: count each thread once per job
+		 * when it exhausts its assigned nonce range. */
+		if (!rc && opt_extranonce1_reconnect == -2 &&
+			!work_restart[thr_id].restart && *nonceptr >= end_nonce) {
+			pthread_mutex_lock(&g_work_lock);
+			if (extranonce1_thread_generation[thr_id] != extranonce1_job_generation) {
+				extranonce1_thread_generation[thr_id] = extranonce1_job_generation;
+				extranonce1_nonce_exhausted++;
+			}
+			pthread_mutex_unlock(&g_work_lock);
+		}
+
 		/* if nonce found, submit work */
 		if (rc && !opt_benchmark) {
 			if (!submit_work(mythr, &work))
@@ -3487,7 +3500,9 @@ static void *stratum_thread(void *userdata)
 			}
 		}
 		if (stratum.curl &&
-			((opt_extranonce1_reconnect > 0 && time(NULL) >= extranonce1_next))) {
+			((opt_extranonce1_reconnect > 0 && time(NULL) >= extranonce1_next) ||
+			 (opt_extranonce1_reconnect == -2 &&
+			  extranonce1_nonce_exhausted >= opt_n_threads))) {
 			stratum_clear_session_for_new_extranonce();
 			if (!opt_quiet)
 				applog(LOG_INFO, "E1 reconnect: requesting new extranonce1");
@@ -3523,7 +3538,7 @@ static void *stratum_thread(void *userdata)
 							stratum.bloc_height);
 				}
 				restart_threads();
-				if (stratum.job.clean && opt_extranonce1_reconnect < 0) {
+				if (stratum.job.clean && opt_extranonce1_reconnect == -1) {
 					const char *job_id = stratum.job.job_id ? stratum.job.job_id : "";
 					if (!last_clean_job_id || strcmp(last_clean_job_id, job_id)) {
 						free(last_clean_job_id);
@@ -4133,6 +4148,10 @@ void parse_arg(int key, char *arg)
 		if (v < 1 || v > 86400)
 			show_usage_and_exit(1);
 		opt_extranonce1_reconnect = v;
+		break;
+	case 1074:
+		/* Reconnect when all miner threads exhaust their nonce ranges. */
+		opt_extranonce1_reconnect = -2;
 		break;
 	case 1067:
 		if (!arg || !*arg || (strlen(arg) & 1) || strlen(arg) > 32)
