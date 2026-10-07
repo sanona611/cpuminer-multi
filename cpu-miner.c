@@ -283,8 +283,21 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 	mt_xnonce2_last_randomized = false;
 	mt_xnonce2_nonce_static_refresh = false;
 
-	if (!opt_extranonce2_randomize)
+	if (!opt_extranonce2_randomize) {
+		/* With factory E2, --nonce-static still works when --randomize
+		 * is active: keep the same random nonce chunk for N work
+		 * regenerations, then select a new random chunk. */
+		if (opt_randomize && opt_nonce_static) {
+			if (!mt_xnonce2_increment_initialized || new_block) {
+				mt_xnonce2_increment_initialized = true;
+				mt_xnonce2_nonce_static_changes = 0;
+			} else if (++mt_xnonce2_nonce_static_changes >= opt_nonce_static) {
+				mt_xnonce2_nonce_static_changes = 0;
+				mt_xnonce2_nonce_static_refresh = true;
+			}
+		}
 		return;
+	}
 
 	if (!mt_xnonce2_increment_initialized || new_block) {
 		if (opt_extranonce2_randomize_shift)
@@ -2568,7 +2581,9 @@ static void *miner_thread(void *userdata)
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
 			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work, opt_extranonce2_randomize && regen_work);
+				stratum_gen_work(&stratum, &g_work,
+					(opt_extranonce2_randomize ||
+					 (opt_randomize && opt_nonce_static)) && regen_work);
 			}
 
 		} else {
@@ -2612,16 +2627,16 @@ static void *miner_thread(void *userdata)
 				bool keep_static_chunk;
 
 				if (opt_extranonce2_randomize_shift) {
-					/* Preserve the existing +++ 16-state nonce-static
-					 * behavior exactly; --nonce-static N is ignored here. */
+					/* Preserve the existing +++ 16-state behavior exactly;
+					 * --nonce-static N remains ignored for E2+++ itself. */
 					keep_static_chunk = opt_nonce_static &&
-						opt_extranonce2_randomize && nonce_static_valid &&
+						opt_randomize && nonce_static_valid &&
 						!mt_xnonce2_last_randomized;
 				} else {
-					/* For plain randomize and ++, keep the same nonce chunk
-					 * for N E2 changes, then choose a new random chunk. */
+					/* Keep the same random nonce chunk while --nonce-static
+					 * is active, including factory E2. */
 					keep_static_chunk = opt_nonce_static &&
-						opt_extranonce2_randomize && nonce_static_valid &&
+						opt_randomize && nonce_static_valid &&
 						!mt_xnonce2_nonce_static_refresh;
 				}
 
@@ -2639,7 +2654,7 @@ static void *miner_thread(void *userdata)
 							(uint64_t)thr_hashrates[thr_id]));
 					}
 
-					if (opt_nonce_static && opt_extranonce2_randomize) {
+					if (opt_nonce_static && opt_randomize) {
 						nonce_static_start = *nonceptr;
 						nonce_static_end = end_nonce;
 						nonce_static_valid = true;
