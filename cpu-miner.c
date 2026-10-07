@@ -2553,6 +2553,7 @@ static void *miner_thread(void *userdata)
 		struct timeval tv_start, tv_end, diff;
 		int64_t max64;
 		bool regen_work = false;
+		bool work_changed = false;
 		int wkcmp_offset = 0;
 		int nonce_oft = 19*sizeof(uint32_t); // 76
 		int wkcmp_sz = nonce_oft;
@@ -2603,10 +2604,19 @@ static void *miner_thread(void *userdata)
 			regen_work = regen_work || ( nonce_exhausted_now
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
+
+			pthread_mutex_lock(&stratum.work_lock);
+			if (stratum.difficulty_changed) {
+				stratum.difficulty_changed = false;
+				regen_work = true;
+			}
+			pthread_mutex_unlock(&stratum.work_lock);
+
 			if (regen_work) {
 				stratum_gen_work(&stratum, &g_work,
 					(opt_extranonce2_randomize ||
-					 (opt_randomize && opt_nonce_static)) && regen_work);
+					 (opt_randomize && opt_nonce_static)) && nonce_exhausted_now);
+				work_changed = true;
 			}
 
 		} else {
@@ -2630,7 +2640,8 @@ static void *miner_thread(void *userdata)
 				continue;
 			}
 		}
-		if (memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
+		if (work_changed ||
+			memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 			jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0)
 		{
 			uint32_t old_nonce = *nonceptr;
