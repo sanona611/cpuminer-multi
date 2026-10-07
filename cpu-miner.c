@@ -278,6 +278,8 @@ static void stratum_randomize_xnonce2_distinct(struct stratum_ctx *sctx)
 	mt_xnonce2_cycle_start_valid = true;
 }
 
+extern bool opt_randomize;
+
 static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 {
 	mt_xnonce2_last_randomized = false;
