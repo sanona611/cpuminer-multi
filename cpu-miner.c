@@ -3126,17 +3126,6 @@ static void *miner_thread(void *userdata)
 			}
 		}
 
-		/* In event mode, request a new pool extranonce1 only after every
-		 * mining thread has exhausted its assigned nonce range for this work. */
-		if (!rc && opt_extranonce1_reconnect < 0 &&
-			!work_restart[thr_id].restart && *nonceptr >= end_nonce) {
-			pthread_mutex_lock(&g_work_lock);
-			if (extranonce1_thread_generation[thr_id] != extranonce1_job_generation) {
-				extranonce1_thread_generation[thr_id] = extranonce1_job_generation;
-				extranonce1_nonce_exhausted++;
-			}
-			pthread_mutex_unlock(&g_work_lock);
-		}
 
 		/* if nonce found, submit work */
 		if (rc && !opt_benchmark) {
@@ -3498,8 +3487,7 @@ static void *stratum_thread(void *userdata)
 			}
 		}
 		if (stratum.curl &&
-			((opt_extranonce1_reconnect > 0 && time(NULL) >= extranonce1_next) ||
-			 (opt_extranonce1_reconnect < 0 && extranonce1_nonce_exhausted >= opt_n_threads))) {
+			((opt_extranonce1_reconnect > 0 && time(NULL) >= extranonce1_next))) {
 			stratum_clear_session_for_new_extranonce();
 			if (!opt_quiet)
 				applog(LOG_INFO, "E1 reconnect: requesting new extranonce1");
@@ -3542,7 +3530,7 @@ static void *stratum_thread(void *userdata)
 						last_clean_job_id = strdup(job_id);
 						stratum_clear_session_for_new_extranonce();
 						if (!opt_quiet)
-							applog(LOG_INFO, "E1 reconnect: clean job received");
+							applog(LOG_INFO, "E1 reconnect: new block/clean job received");
 						stratum_disconnect(&stratum);
 						continue;
 					}
@@ -4137,7 +4125,7 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1066:
 		if (!arg || !*arg) {
-			/* No N: reconnect on full nonce-space exhaustion or clean job. */
+			/* No N: reconnect only when a new block/clean job arrives. */
 			opt_extranonce1_reconnect = -1;
 			break;
 		}
