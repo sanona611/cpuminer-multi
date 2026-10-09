@@ -498,6 +498,39 @@ static inline int scanhash_sha256d_4way(int thr_id, struct work *work,
 		}
 	}
 	
+
+	/* Vectorized stepping: lanes cover first_nonce + k * opt_nonce_step. */
+	if (opt_nonce_step > 1) {
+		uint64_t base = first_nonce, attempted = 0;
+		uint32_t last_nonce = first_nonce;
+		while (base <= max_nonce && !work_restart[thr_id].restart) {
+			for (i = 0; i < 4; i++) {
+				uint64_t v = base + (uint64_t)i * opt_nonce_step;
+				data[12 + i] = v <= UINT32_MAX ? (uint32_t)v : 0;
+			}
+			sha256d_ms_4way(hash, data, midstate, prehash);
+			for (i = 0; i < 4; i++) {
+				uint64_t v = base + (uint64_t)i * opt_nonce_step;
+				if (v > max_nonce || v > UINT32_MAX) continue;
+				last_nonce = (uint32_t)v;
+				attempted++;
+				if (swab32(hash[4 * 7 + i]) <= Htarg) {
+					pdata[19] = last_nonce;
+					sha256d_80_swap(hash, pdata);
+					if (fulltest(hash, ptarget)) {
+						work_set_target_ratio(work, hash);
+						*hashes_done = attempted;
+						return 1;
+					}
+				}
+			}
+			base += (uint64_t)4 * opt_nonce_step;
+		}
+		*hashes_done = attempted;
+		pdata[19] = last_nonce;
+		return 0;
+	}
+
 	do {
 		for (i = 0; i < 4; i++)
 			data[4 * 3 + i] = ++n;
@@ -560,6 +593,39 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 		}
 	}
 	
+
+	/* Vectorized stepping: lanes cover first_nonce + k * opt_nonce_step. */
+	if (opt_nonce_step > 1) {
+		uint64_t base = first_nonce, attempted = 0;
+		uint32_t last_nonce = first_nonce;
+		while (base <= max_nonce && !work_restart[thr_id].restart) {
+			for (i = 0; i < 8; i++) {
+				uint64_t v = base + (uint64_t)i * opt_nonce_step;
+				data[24 + i] = v <= UINT32_MAX ? (uint32_t)v : 0;
+			}
+			sha256d_ms_8way(hash, data, midstate, prehash);
+			for (i = 0; i < 8; i++) {
+				uint64_t v = base + (uint64_t)i * opt_nonce_step;
+				if (v > max_nonce || v > UINT32_MAX) continue;
+				last_nonce = (uint32_t)v;
+				attempted++;
+				if (swab32(hash[8 * 7 + i]) <= Htarg) {
+					pdata[19] = last_nonce;
+					sha256d_80_swap(hash, pdata);
+					if (fulltest(hash, ptarget)) {
+						work_set_target_ratio(work, hash);
+						*hashes_done = attempted;
+						return 1;
+					}
+				}
+			}
+			base += (uint64_t)8 * opt_nonce_step;
+		}
+		*hashes_done = attempted;
+		pdata[19] = last_nonce;
+		return 0;
+	}
+
 	do {
 		for (i = 0; i < 8; i++)
 			data[8 * 3 + i] = ++n;
@@ -588,9 +654,6 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 
 const char *sha256d_get_implementation(void)
 {
-	if (opt_nonce_step > 1)
-		return "Scalar (forced by --nonce-step)";
-
 #ifdef HAVE_SHA256_8WAY
 	if (sha256_use_8way())
 		return "AVX2 (8-way)";
@@ -615,11 +678,11 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	uint32_t n = pdata[19] - 1;
 
 #ifdef HAVE_SHA256_8WAY
-	if (opt_nonce_step == 1 && sha256_use_8way())
+	if (sha256_use_8way())
 		return scanhash_sha256d_8way(thr_id, work, max_nonce, hashes_done);
 #endif
 #ifdef HAVE_SHA256_4WAY
-	if (opt_nonce_step == 1 && sha256_use_4way())
+	if (sha256_use_4way())
 		return scanhash_sha256d_4way(thr_id, work, max_nonce, hashes_done);
 #endif
 	
@@ -631,35 +694,6 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	memcpy(prehash, midstate, 32);
 	sha256d_prehash(prehash, pdata + 16);
 
-	/* A non-unit nonce step uses the scalar path so every tested nonce is
-	 * exactly first_nonce + k * opt_nonce_step. */
-	if (opt_nonce_step > 1) {
-		uint32_t nonce = pdata[19];
-		uint32_t last_nonce = nonce;
-		uint64_t attempted = 0;
-
-		while (nonce <= max_nonce && !work_restart[thr_id].restart) {
-			data[3] = nonce;
-			sha256d_ms(hash, data, midstate, prehash);
-			attempted++;
-			last_nonce = nonce;
-			if (unlikely(swab32(hash[7]) <= Htarg)) {
-				pdata[19] = nonce;
-				sha256d_80_swap(hash, pdata);
-				if (fulltest(hash, ptarget)) {
-					work_set_target_ratio(work, hash);
-					*hashes_done = attempted;
-					return 1;
-				}
-			}
-			if (UINT32_MAX - nonce < opt_nonce_step)
-				break;
-			nonce += opt_nonce_step;
-		}
-		*hashes_done = attempted;
-		pdata[19] = last_nonce;
-		return 0;
-	}
 
 	do {
 		data[3] = ++n;
