@@ -1455,6 +1455,27 @@ out:
 #define YAY "yay!!!"
 #define BOO "booooo"
 
+static void shareinfo_hex_little_endian(char *dst, size_t dst_size, const char *src)
+{
+	size_t len, i;
+
+	if (!dst || !dst_size)
+		return;
+	dst[0] = '\0';
+	if (!src)
+		return;
+
+	len = strlen(src);
+	if (len >= dst_size)
+		len = dst_size - 1;
+	len &= ~(size_t)1;
+	for (i = 0; i < len; i += 2) {
+		dst[len - 2 - i] = src[i];
+		dst[len - 1 - i] = src[i + 1];
+	}
+	dst[len] = '\0';
+}
+
 static void shareinfo_get_time_nonce(const struct work *work, uint32_t *ntime, uint32_t *nonce)
 {
 	switch (opt_algo) {
@@ -1550,10 +1571,14 @@ static int share_result(int result, struct work *work, const char *reason)
 		shareinfo = shareinfo_pop();
 
 	if (opt_shareinfo && shareinfo) {
+		char e1_le[sizeof(shareinfo->e1)];
+		char e2_le[sizeof(shareinfo->e2)];
+		shareinfo_hex_little_endian(e1_le, sizeof(e1_le), shareinfo->e1);
+		shareinfo_hex_little_endian(e2_le, sizeof(e2_le), shareinfo->e2);
 		snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 			"  <thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
-			shareinfo->thr_id, shareinfo->nonce, shareinfo->e1, shareinfo->e2,
-			shareinfo->ntime, shareinfo->version);
+			shareinfo->thr_id, swab32(shareinfo->nonce), e1_le, e2_le,
+			swab32(shareinfo->ntime), swab32(shareinfo->version));
 	}
 
 	hashrate = 0.;
@@ -1705,7 +1730,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 					applog(LOG_DEBUG,
 						"SUBMIT: job_id='%s' ntime=%08x nonce=%08x version_bits=%08x header_version=%08x",
 						work->job_id, swab32(work->data[17]), swab32(work->data[19]),
-						work->version_bits, work->data[0]);
+						swab32(work->version_bits), swab32(work->data[0]));
 				snprintf(s, JSON_BUF_LEN,
 					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%08x\"], \"id\":4}",
 					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr,
@@ -2366,8 +2391,10 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool r
 
 		if (opt_debug && opt_algo != ALGO_DECRED && opt_algo != ALGO_SIA) {
 			char *xnonce2str = abin2hex(work->xnonce2, work->xnonce2_len);
+			char xnonce2_le[129];
+			shareinfo_hex_little_endian(xnonce2_le, sizeof(xnonce2_le), xnonce2str);
 			applog(LOG_DEBUG, "DEBUG: job_id='%s' extranonce2=%s pool_ntime=%08x",
-					work->job_id, xnonce2str, swab32(work->data[17]));
+					work->job_id, xnonce2_le, swab32(work->data[17]));
 			free(xnonce2str);
 		}
 
@@ -2605,7 +2632,7 @@ static void *miner_thread(void *userdata)
 			if (opt_timeroll && stratum_time_roll_locked()) {
 				if (opt_debug)
 					applog(LOG_DEBUG, "Stratum timeroll unix_ntime=%08x",
-						g_time_roll_last_unix_time);
+						swab32(g_time_roll_last_unix_time));
 				restart_threads();
 			}
 
@@ -2628,6 +2655,11 @@ static void *miner_thread(void *userdata)
 				bool current_work_exhausted = nonce_exhausted_now &&
 					!memcmp(&work.data[wkcmp_offset],
 						&g_work.data[wkcmp_offset], wkcmp_sz);
+				if (opt_debug && current_work_exhausted)
+					applog(LOG_DEBUG,
+						"NONCE EXHAUSTED: thr=%d job=%s nonce=%08x end=%08x",
+						thr_id, work.job_id ? work.job_id : "",
+						swab32(*nonceptr), swab32(end_nonce));
 				stratum_gen_work(&stratum, &g_work, current_work_exhausted);
 				work_changed = true;
 			}
@@ -2711,10 +2743,14 @@ static void *miner_thread(void *userdata)
 				if (opt_debug)
 					applog(LOG_DEBUG,
 						"NONCE RESET: thr=%d job=%s nonce=%08x%s",
-						thr_id, new_job_id, *nonceptr,
+						thr_id, new_job_id, swab32(*nonceptr),
 						had_old_job ? " (new job)" : " (initial)");
 			} else {
 				*nonceptr = old_nonce;
+				if (opt_debug && had_old_job)
+					applog(LOG_DEBUG,
+						"NONCE CONTINUE: thr=%d job=%s nonce=%08x",
+						thr_id, new_job_id, swab32(old_nonce));
 			}
 		} else {
 			if (opt_algo == ALGO_SHA256D && opt_nonce_step > 1)
