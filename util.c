@@ -1459,7 +1459,8 @@ static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work
 		change = true;
 		if (opt_debug)
 			applog(LOG_DEBUG, "Stratum rolled version=%08x bits=%08x mask=%08x%s",
-				sctx->rolled_version, bits, sctx->version_mask,
+				swab32(sctx->rolled_version), swab32(bits),
+				swab32(sctx->version_mask),
 				force ? " (nonce chunk)" : " (new block/start)");
 		if (work)
 			work->version_bits = bits;
@@ -2318,7 +2319,8 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 			sctx->rolled_version = 0;
 			pthread_mutex_unlock(&sctx->work_lock);
 			if (opt_debug)
-				applog(LOG_DEBUG, "Stratum version mask changed to %08x", (uint32_t)mask);
+				applog(LOG_DEBUG, "Stratum version mask changed to %08x",
+					swab32((uint32_t)mask));
 			ret = true;
 		}
 		goto out;
