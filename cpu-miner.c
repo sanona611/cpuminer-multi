@@ -318,6 +318,11 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 					mt_xnonce2_nonce_static_changes++;
 				}
 			}
+		} else if (!new_block) {
+			/* Default/factory E2 advances when the nonce range is exhausted.
+			 * If the full E2 space wraps, restart at zero. */
+			if (stratum_increment_xnonce2(sctx))
+				memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
 		}
 		return;
 	}
@@ -2617,9 +2622,7 @@ static void *miner_thread(void *userdata)
 			pthread_mutex_unlock(&stratum.work_lock);
 
 			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work,
-					(opt_extranonce2_randomize ||
-					 opt_randomize) && nonce_exhausted_now);
+				stratum_gen_work(&stratum, &g_work, nonce_exhausted_now);
 				work_changed = true;
 			}
 
