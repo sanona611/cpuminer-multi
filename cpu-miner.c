@@ -737,7 +737,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --nonce-step=N     Hash every Nth nonce in SHA256d mode (default: 1)\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n\
+      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --nonce-step=N     Hash every Nth nonce in SHA256d mode (default: 1)\n      --avx              Force AVX 128-bit SHA256d path when supported\n      --no-avx           Force SSE2 SHA256d path for performance comparison\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n\
       --extranonce2-randomize+++[=BITS] Random start, then shift each hex nibble +1 (8, 16, 32 bits; default: full size)\n\
       --nonce-static[=N]   Keep the same random nonce chunk for N E2 changes; ignored for E2+++ (its 16-state logic is unchanged)\n\
       --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on a new block when N is omitted\n      --extranonce1-reconnect-nonce  Reconnect on nonce exhaustion and new blocks\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
@@ -834,6 +834,8 @@ static struct option const options[] = {
 	{ "extranonce1-reconnect", 2, NULL, 1066 },
 	{ "extranonce1-reconnect-nonce", 0, NULL, 1074 },
 	{ "nonce-step", 1, NULL, 1075 },
+	{ "avx", 0, NULL, 1076 },
+	{ "no-avx", 0, NULL, 1077 },
 	{ "extranonce1-local", 1, NULL, 1067 },
 	{ "extranonce1-local-roll", 1, NULL, 1068 },
 	{ "scantime", 1, NULL, 's' },
@@ -4204,6 +4206,12 @@ void parse_arg(int key, char *arg)
 	case 1074:
 		/* Reconnect on nonce exhaustion and on new blocks. */
 		opt_extranonce1_reconnect = -2;
+		break;
+	case 1076:
+		sha256_avx_mode = 1;
+		break;
+	case 1077:
+		sha256_avx_mode = 0;
 		break;
 	case 1075: {
 			char *ep;
