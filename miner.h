@@ -180,6 +180,7 @@ json_t* json_load_url(char* cfg_url, json_error_t *err);
 void sha256_init(uint32_t *state);
 void sha256_transform(uint32_t *state, const uint32_t *block, int swap);
 void sha256d(unsigned char *hash, const unsigned char *data, int len);
+extern int sha256_avx_mode;
 
 #ifdef USE_ASM
 #if defined(__ARM_NEON__) || defined(__i386__) || defined(__x86_64__)
