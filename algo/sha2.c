@@ -505,6 +505,9 @@ static inline int scanhash_sha256d_4way(int thr_id, struct work *work,
 		const uint64_t step = opt_nonce_step;
 		const uint64_t lane_span = 3 * step;
 		const uint64_t batch_step = 4 * step;
+		const uint32_t step32 = (uint32_t)step;
+		const uint32_t step2 = step32 * 2;
+		const uint32_t step3 = step32 * 3;
 		uint64_t base = first_nonce, attempted = 0;
 		uint64_t full_last_base = 0;
 		uint32_t last_nonce = first_nonce;
@@ -513,10 +516,11 @@ static inline int scanhash_sha256d_4way(int thr_id, struct work *work,
 			full_last_base = (uint64_t)max_nonce - lane_span;
 			while (base <= full_last_base && !work_restart[thr_id].restart) {
 				uint32_t candidate = (uint32_t)base;
-				for (i = 0; i < 4; i++) {
-					data[12 + i] = candidate;
-					candidate += opt_nonce_step;
-				}
+				/* Independent lane offsets avoid a serial add dependency. */
+				data[12] = candidate;
+				data[13] = candidate + step32;
+				data[14] = candidate + step2;
+				data[15] = candidate + step3;
 
 				sha256d_ms_4way(hash, data, midstate, prehash);
 
@@ -636,6 +640,13 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 		const uint64_t step = opt_nonce_step;
 		const uint64_t lane_span = 7 * step;
 		const uint64_t batch_step = 8 * step;
+		const uint32_t step32 = (uint32_t)step;
+		const uint32_t step2 = step32 * 2;
+		const uint32_t step3 = step32 * 3;
+		const uint32_t step4 = step32 * 4;
+		const uint32_t step5 = step32 * 5;
+		const uint32_t step6 = step32 * 6;
+		const uint32_t step7 = step32 * 7;
 		uint64_t base = first_nonce, attempted = 0;
 		uint64_t full_last_base = 0;
 		uint32_t last_nonce = first_nonce;
@@ -644,10 +655,15 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 			full_last_base = (uint64_t)max_nonce - lane_span;
 			while (base <= full_last_base && !work_restart[thr_id].restart) {
 				uint32_t candidate = (uint32_t)base;
-				for (i = 0; i < 8; i++) {
-					data[24 + i] = candidate;
-					candidate += opt_nonce_step;
-				}
+				/* Independent lane offsets avoid a serial add dependency. */
+				data[24] = candidate;
+				data[25] = candidate + step32;
+				data[26] = candidate + step2;
+				data[27] = candidate + step3;
+				data[28] = candidate + step4;
+				data[29] = candidate + step5;
+				data[30] = candidate + step6;
+				data[31] = candidate + step7;
 
 				sha256d_ms_8way(hash, data, midstate, prehash);
 
