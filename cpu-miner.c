@@ -322,9 +322,9 @@ static void stratum_update_xnonce2(struct stratum_ctx *sctx, bool new_block)
 					mt_xnonce2_nonce_static_changes++;
 				}
 			}
-		} else if (!new_block) {
-			/* Default/factory E2 advances when the nonce range is exhausted.
-			 * If the full E2 space wraps, restart at zero. */
+		} else {
+			/* Factory behavior: advance E2 whenever Stratum work is regenerated,
+			 * including a new/clean job after util.c resets E2 to zero. */
 			if (stratum_increment_xnonce2(sctx))
 				memset(sctx->job.xnonce2, 0, sctx->xnonce2_size);
 		}
@@ -864,16 +864,6 @@ static time_t g_work_time = 0;
 static pthread_mutex_t g_work_lock;
 static bool submit_old = false;
 static char *lp_id;
-
-/*
- * For the ordinary Stratum extranonce2 counter, advance E2 only after every
- * mining thread has exhausted its own nonce partition for the same
- * prevhash+merkle-root. ntime and version are deliberately excluded so
- * timeroll and version rolling do not release a waiting thread.
- */
-static bool nonce_cycle_exhausted[MAX_CPUS] = { false };
-static uint32_t nonce_cycle_identity[16];
-static bool nonce_cycle_identity_valid = false;
 
 static uint64_t g_time_roll_work_generation = 0;
 static uint64_t g_time_roll_seen_generation = 0;
@@ -2279,7 +2269,15 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool r
 
 	pthread_mutex_lock(&sctx->work_lock);
 
-	if (!jsonrpc_2 && randomize_xnonce2) {
+	/*
+	 * Preserve factory E2 behavior whenever the dedicated E2 options are not
+	 * selected: every regenerated Stratum work item advances the default E2
+	 * counter. --randomize --nonce-static retains its explicit chunk policy.
+	 */
+	if (!jsonrpc_2 &&
+	    (randomize_xnonce2 ||
+	     (!opt_extranonce2_randomize &&
+	      !(opt_randomize && opt_nonce_static)))) {
 		stratum_update_xnonce2(sctx, sctx->job.clean);
 		if (opt_vroll && sctx->version_rolling &&
 		    (mt_xnonce2_nonce_static_refresh ||
@@ -2650,51 +2648,6 @@ static void *miner_thread(void *userdata)
 					applog(LOG_DEBUG, "Stratum timeroll unix_ntime=%08x",
 						swab32(g_time_roll_last_unix_time));
 				restart_threads();
-			}
-
-			/*
-			 * In normal Stratum mining, each thread owns a nonce partition.
-			 * Do not increment the shared E2 when only one partition is done:
-			 * wait until all threads finish the same prevhash+merkle-root.
-			 * This coordination is intentionally limited to the standard E2
-			 * counter; randomize/E2-randomize modes have their own rollover rules.
-			 */
-			bool coordinate_nonce_cycle = opt_algo == ALGO_SHA256D &&
-				!opt_randomize && !opt_extranonce2_randomize &&
-				!jsonrpc_2 && nonce_exhausted_now;
-			bool same_nonce_cycle = !memcmp(&work.data[1], &g_work.data[1],
-				16 * sizeof(uint32_t));
-			if (coordinate_nonce_cycle && same_nonce_cycle) {
-				if (!nonce_cycle_identity_valid ||
-				    memcmp(nonce_cycle_identity, &g_work.data[1],
-					   sizeof(nonce_cycle_identity))) {
-					memset(nonce_cycle_exhausted, 0,
-					       sizeof(nonce_cycle_exhausted));
-					memcpy(nonce_cycle_identity, &g_work.data[1],
-					       sizeof(nonce_cycle_identity));
-					nonce_cycle_identity_valid = true;
-				}
-				nonce_cycle_exhausted[thr_id] = true;
-				bool all_threads_exhausted = true;
-				for (int cycle_thr = 0; cycle_thr < opt_n_threads; cycle_thr++) {
-					if (!nonce_cycle_exhausted[cycle_thr]) {
-						all_threads_exhausted = false;
-						break;
-					}
-				}
-				if (!all_threads_exhausted) {
-					pthread_mutex_unlock(&g_work_lock);
-					sleep(1);
-					continue;
-				}
-				memset(nonce_cycle_exhausted, 0,
-				       sizeof(nonce_cycle_exhausted));
-				nonce_cycle_identity_valid = false;
-			} else if (coordinate_nonce_cycle && !same_nonce_cycle) {
-				/* New block/template: release any threads waiting on old work. */
-				memset(nonce_cycle_exhausted, 0,
-				       sizeof(nonce_cycle_exhausted));
-				nonce_cycle_identity_valid = false;
 			}
 
 			// to clean: is g_work loaded before the memcmp ?
