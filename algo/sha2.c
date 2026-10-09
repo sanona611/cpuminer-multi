@@ -13,6 +13,9 @@
 #include <string.h>
 #include <inttypes.h>
 
+/* -1: automatic dispatch, 0: force SSE2, 1: prefer AVX when supported. */
+int sha256_avx_mode = -1;
+
 #if defined(USE_ASM) && defined(__arm__) && defined(__APCS_32__)
 #define EXTERN_SHA256
 #endif
@@ -747,8 +750,13 @@ const char *sha256d_get_implementation(void)
 		return "AVX2 (8-way)";
 #endif
 #ifdef HAVE_SHA256_4WAY
-	if (sha256_use_4way())
-		return "SSE/4-way SIMD";
+	{
+		int implementation = sha256_use_4way();
+		if (implementation > 1)
+			return "AVX (4-way)";
+		if (implementation)
+			return "SSE2 (4-way SIMD)";
+	}
 #endif
 	return "Scalar (no supported SHA256 SIMD path)";
 }
