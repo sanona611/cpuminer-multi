@@ -613,6 +613,7 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	sha256_init(midstate);
 	sha256_transform(midstate, pdata, 0);
 	memcpy(prehash, midstate, 32);
+	sha256d_prehash(prehash, pdata + 16);
 
 	/* A non-unit nonce step uses the scalar path so every tested nonce is
 	 * exactly first_nonce + k * opt_nonce_step. */
