@@ -499,20 +499,57 @@ static inline int scanhash_sha256d_4way(int thr_id, struct work *work,
 	}
 	
 
-	/* Vectorized stepping: lanes cover first_nonce + k * opt_nonce_step. */
+	/* Vectorized nonce stepping. Keep complete SIMD batches on the hot path;
+	 * only the final partial batch needs per-lane range checks. */
 	if (opt_nonce_step > 1) {
+		const uint64_t step = opt_nonce_step;
+		const uint64_t lane_span = 3 * step;
+		const uint64_t batch_step = 4 * step;
 		uint64_t base = first_nonce, attempted = 0;
+		uint64_t full_last_base = 0;
 		uint32_t last_nonce = first_nonce;
-		while (base <= max_nonce && !work_restart[thr_id].restart) {
+
+		if ((uint64_t)max_nonce >= lane_span) {
+			full_last_base = (uint64_t)max_nonce - lane_span;
+			while (base <= full_last_base && !work_restart[thr_id].restart) {
+				uint32_t candidate = (uint32_t)base;
+				for (i = 0; i < 4; i++) {
+					data[12 + i] = candidate;
+					candidate += opt_nonce_step;
+				}
+
+				sha256d_ms_4way(hash, data, midstate, prehash);
+
+				for (i = 0; i < 4; i++) {
+					uint32_t nonce = data[12 + i];
+					if (swab32(hash[4 * 7 + i]) <= Htarg) {
+						pdata[19] = nonce;
+						sha256d_80_swap(hash, pdata);
+						if (fulltest(hash, ptarget)) {
+							work_set_target_ratio(work, hash);
+							*hashes_done = attempted + (uint64_t)i + 1;
+							return 1;
+						}
+					}
+				}
+				attempted += 4;
+				last_nonce = data[15];
+				base += batch_step;
+			}
+		}
+
+		/* Tail: only here do we skip lanes beyond max_nonce. */
+		if (base <= max_nonce && !work_restart[thr_id].restart) {
 			for (i = 0; i < 4; i++) {
-				uint64_t v = base + (uint64_t)i * opt_nonce_step;
-				data[12 + i] = v <= UINT32_MAX ? (uint32_t)v : 0;
+				uint64_t candidate = base + (uint64_t)i * step;
+				data[12 + i] = candidate <= max_nonce ? (uint32_t)candidate : 0;
 			}
 			sha256d_ms_4way(hash, data, midstate, prehash);
 			for (i = 0; i < 4; i++) {
-				uint64_t v = base + (uint64_t)i * opt_nonce_step;
-				if (v > max_nonce || v > UINT32_MAX) continue;
-				last_nonce = (uint32_t)v;
+				uint64_t candidate = base + (uint64_t)i * step;
+				if (candidate > max_nonce)
+					break;
+				last_nonce = (uint32_t)candidate;
 				attempted++;
 				if (swab32(hash[4 * 7 + i]) <= Htarg) {
 					pdata[19] = last_nonce;
@@ -524,7 +561,6 @@ static inline int scanhash_sha256d_4way(int thr_id, struct work *work,
 					}
 				}
 			}
-			base += (uint64_t)4 * opt_nonce_step;
 		}
 		*hashes_done = attempted;
 		pdata[19] = last_nonce;
@@ -594,20 +630,57 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 	}
 	
 
-	/* Vectorized stepping: lanes cover first_nonce + k * opt_nonce_step. */
+	/* Vectorized nonce stepping. Keep complete SIMD batches on the hot path;
+	 * only the final partial batch needs per-lane range checks. */
 	if (opt_nonce_step > 1) {
+		const uint64_t step = opt_nonce_step;
+		const uint64_t lane_span = 7 * step;
+		const uint64_t batch_step = 8 * step;
 		uint64_t base = first_nonce, attempted = 0;
+		uint64_t full_last_base = 0;
 		uint32_t last_nonce = first_nonce;
-		while (base <= max_nonce && !work_restart[thr_id].restart) {
+
+		if ((uint64_t)max_nonce >= lane_span) {
+			full_last_base = (uint64_t)max_nonce - lane_span;
+			while (base <= full_last_base && !work_restart[thr_id].restart) {
+				uint32_t candidate = (uint32_t)base;
+				for (i = 0; i < 8; i++) {
+					data[24 + i] = candidate;
+					candidate += opt_nonce_step;
+				}
+
+				sha256d_ms_8way(hash, data, midstate, prehash);
+
+				for (i = 0; i < 8; i++) {
+					uint32_t nonce = data[24 + i];
+					if (swab32(hash[8 * 7 + i]) <= Htarg) {
+						pdata[19] = nonce;
+						sha256d_80_swap(hash, pdata);
+						if (fulltest(hash, ptarget)) {
+							work_set_target_ratio(work, hash);
+							*hashes_done = attempted + (uint64_t)i + 1;
+							return 1;
+						}
+					}
+				}
+				attempted += 8;
+				last_nonce = data[31];
+				base += batch_step;
+			}
+		}
+
+		/* Tail: only here do we skip lanes beyond max_nonce. */
+		if (base <= max_nonce && !work_restart[thr_id].restart) {
 			for (i = 0; i < 8; i++) {
-				uint64_t v = base + (uint64_t)i * opt_nonce_step;
-				data[24 + i] = v <= UINT32_MAX ? (uint32_t)v : 0;
+				uint64_t candidate = base + (uint64_t)i * step;
+				data[24 + i] = candidate <= max_nonce ? (uint32_t)candidate : 0;
 			}
 			sha256d_ms_8way(hash, data, midstate, prehash);
 			for (i = 0; i < 8; i++) {
-				uint64_t v = base + (uint64_t)i * opt_nonce_step;
-				if (v > max_nonce || v > UINT32_MAX) continue;
-				last_nonce = (uint32_t)v;
+				uint64_t candidate = base + (uint64_t)i * step;
+				if (candidate > max_nonce)
+					break;
+				last_nonce = (uint32_t)candidate;
 				attempted++;
 				if (swab32(hash[8 * 7 + i]) <= Htarg) {
 					pdata[19] = last_nonce;
@@ -619,7 +692,6 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 					}
 				}
 			}
-			base += (uint64_t)8 * opt_nonce_step;
 		}
 		*hashes_done = attempted;
 		pdata[19] = last_nonce;
