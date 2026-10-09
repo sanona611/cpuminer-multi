@@ -3022,6 +3022,9 @@ _sha256_use_4way:
 	pushq	%rdx
 	
 #if defined(USE_AVX)
+	/* --no-avx selects the baseline SSE2 implementation. */
+	cmpl	$0, sha256_avx_mode(%rip)
+	je sha256_use_4way_base
 	/* Check for AVX and OSXSAVE support */
 	movl	$1, %eax
 	cpuid
@@ -3044,18 +3047,21 @@ _sha256_use_4way:
 sha256_use_4way_xop:
 	leaq	sha256d_ms_4way_xop(%rip), %rcx
 	leaq	sha256_transform_4way_core_xop(%rip), %rdx
+	movl	$2, %r10d
 	jmp sha256_use_4way_done
 #endif /* USE_XOP */
 	
 sha256_use_4way_avx:
 	leaq	sha256d_ms_4way_avx(%rip), %rcx
 	leaq	sha256_transform_4way_core_avx(%rip), %rdx
+	movl	$2, %r10d
 	jmp sha256_use_4way_done
 #endif /* USE_AVX */
 	
 sha256_use_4way_base:
 	leaq	sha256d_ms_4way_sse2(%rip), %rcx
 	leaq	sha256_transform_4way_core_sse2(%rip), %rdx
+	movl	$1, %r10d
 	
 sha256_use_4way_done:
 	movq	%rcx, sha256d_ms_4way_addr(%rip)
@@ -3063,7 +3069,7 @@ sha256_use_4way_done:
 	popq	%rdx
 	popq	%rcx
 	popq	%rbx
-	movl	$1, %eax
+	movl	%r10d, %eax
 	ret
 
 
