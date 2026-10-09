@@ -746,7 +746,7 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 const char *sha256d_get_implementation(void)
 {
 #ifdef HAVE_SHA256_8WAY
-	if (sha256_use_8way())
+	if (sha256_avx_mode < 0 && sha256_use_8way())
 		return "AVX2 (8-way)";
 #endif
 #ifdef HAVE_SHA256_4WAY
@@ -774,7 +774,7 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	uint32_t n = pdata[19] - 1;
 
 #ifdef HAVE_SHA256_8WAY
-	if (sha256_use_8way())
+	if (sha256_avx_mode < 0 && sha256_use_8way())
 		return scanhash_sha256d_8way(thr_id, work, max_nonce, hashes_done);
 #endif
 #ifdef HAVE_SHA256_4WAY
