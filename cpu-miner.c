@@ -2622,7 +2622,13 @@ static void *miner_thread(void *userdata)
 			pthread_mutex_unlock(&stratum.work_lock);
 
 			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work, nonce_exhausted_now);
+				/* Only the thread that still owns the current shared work may
+				 * advance E2 on nonce exhaustion. Other threads can report the
+				 * same exhaustion after another thread has already replaced g_work. */
+				bool current_work_exhausted = nonce_exhausted_now &&
+					!memcmp(&work.data[wkcmp_offset],
+						&g_work.data[wkcmp_offset], wkcmp_sz);
+				stratum_gen_work(&stratum, &g_work, current_work_exhausted);
 				work_changed = true;
 			}
 
