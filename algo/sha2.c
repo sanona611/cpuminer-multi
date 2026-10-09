@@ -613,8 +613,37 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	sha256_init(midstate);
 	sha256_transform(midstate, pdata, 0);
 	memcpy(prehash, midstate, 32);
-	sha256d_prehash(prehash, pdata + 16);
-	
+
+	/* A non-unit nonce step uses the scalar path so every tested nonce is
+	 * exactly first_nonce + k * opt_nonce_step. */
+	if (opt_nonce_step > 1) {
+		uint32_t nonce = pdata[19];
+		uint32_t last_nonce = nonce;
+		uint64_t attempted = 0;
+
+		while (nonce <= max_nonce && !work_restart[thr_id].restart) {
+			data[3] = nonce;
+			sha256d_ms(hash, data, midstate, prehash);
+			attempted++;
+			last_nonce = nonce;
+			if (unlikely(swab32(hash[7]) <= Htarg)) {
+				pdata[19] = nonce;
+				sha256d_80_swap(hash, pdata);
+				if (fulltest(hash, ptarget)) {
+					work_set_target_ratio(work, hash);
+					*hashes_done = attempted;
+					return 1;
+				}
+			}
+			if (UINT32_MAX - nonce < opt_nonce_step)
+				break;
+			nonce += opt_nonce_step;
+		}
+		*hashes_done = attempted;
+		pdata[19] = last_nonce;
+		return 0;
+	}
+
 	do {
 		data[3] = ++n;
 		sha256d_ms(hash, data, midstate, prehash);
@@ -628,7 +657,7 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 			}
 		}
 	} while (likely(n < max_nonce && !work_restart[thr_id].restart));
-	
+
 	*hashes_done = n - first_nonce + 1;
 	pdata[19] = n;
 	return 0;

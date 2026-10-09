@@ -562,6 +562,7 @@ bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
 static uint32_t opt_randomize_range = 0;
+uint32_t opt_nonce_step = 1;
 bool opt_extranonce2_randomize = false;
 bool opt_extranonce2_randomize_increment = false;
 bool opt_extranonce2_randomize_shift = false;
@@ -731,7 +732,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n\
+      --randomize[=RANGE] Randomize scan range start; optional 32-bit decimal end range\n      --nonce-step=N     Hash every Nth nonce in SHA256d mode (default: 1)\n      --extranonce2-randomize[=BITS]  Randomize Stratum extranonce2 (8, 16, 32 bits; default: full size)\n      --extranonce2-randomize++[=BITS] Random start, then increment E2 (8, 16, 32 bits; default: full size)\n\
       --extranonce2-randomize+++[=BITS] Random start, then shift each hex nibble +1 (8, 16, 32 bits; default: full size)\n\
       --nonce-static[=N]   Keep the same random nonce chunk for N E2 changes; ignored for E2+++ (its 16-state logic is unchanged)\n\
       --timeroll        Roll Stratum ntime every second\n      --extranonce1-reconnect[=N]  Reconnect every N seconds, or on a new block when N is omitted\n      --extranonce1-reconnect-nonce  Reconnect on nonce exhaustion and new blocks\n      --extranonce1-local=HEX    Use a local extranonce1 for testing\n      --extranonce1-local-roll=N Change local extranonce1 every N seconds (test only)\n\
@@ -827,6 +828,7 @@ static struct option const options[] = {
 	{ "nonce-static", 2, NULL, 1073 },
 	{ "extranonce1-reconnect", 2, NULL, 1066 },
 	{ "extranonce1-reconnect-nonce", 0, NULL, 1074 },
+	{ "nonce-step", 1, NULL, 1075 },
 	{ "extranonce1-local", 1, NULL, 1067 },
 	{ "extranonce1-local-roll", 1, NULL, 1068 },
 	{ "scantime", 1, NULL, 's' },
@@ -2706,7 +2708,10 @@ static void *miner_thread(void *userdata)
 				*nonceptr = old_nonce;
 			}
 		} else {
-			++(*nonceptr);
+			if (opt_algo == ALGO_SHA256D && opt_nonce_step > 1)
+				*nonceptr += opt_nonce_step;
+			else
+				++(*nonceptr);
 			nonce_initialized = true;
 		}
 		pthread_mutex_unlock(&g_work_lock);
@@ -4155,6 +4160,17 @@ void parse_arg(int key, char *arg)
 		/* Reconnect on nonce exhaustion and on new blocks. */
 		opt_extranonce1_reconnect = -2;
 		break;
+	case 1075: {
+			char *ep;
+			unsigned long long step;
+			if (!arg || !*arg)
+				show_usage_and_exit(1);
+			step = strtoull(arg, &ep, 10);
+			if (*ep || step == 0 || step > UINT32_MAX)
+				show_usage_and_exit(1);
+			opt_nonce_step = (uint32_t)step;
+			break;
+		}
 	case 1067:
 		if (!arg || !*arg || (strlen(arg) & 1) || strlen(arg) > 32)
 			show_usage_and_exit(1);
