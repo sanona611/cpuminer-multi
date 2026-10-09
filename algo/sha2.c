@@ -521,9 +521,9 @@ static inline int scanhash_sha256d_4way(int thr_id, struct work *work,
 				sha256d_ms_4way(hash, data, midstate, prehash);
 
 				for (i = 0; i < 4; i++) {
-					uint32_t nonce = data[12 + i];
 					if (__builtin_expect(swab32(hash[4 * 7 + i]) <= Htarg, 0)) {
-						pdata[19] = nonce;
+						/* Reconstruct the nonce only for a rare target hit. */
+						pdata[19] = (uint32_t)(base + (uint64_t)i * step);
 						sha256d_80_swap(hash, pdata);
 						if (fulltest(hash, ptarget)) {
 							work_set_target_ratio(work, hash);
@@ -652,9 +652,9 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 				sha256d_ms_8way(hash, data, midstate, prehash);
 
 				for (i = 0; i < 8; i++) {
-					uint32_t nonce = data[24 + i];
 					if (__builtin_expect(swab32(hash[8 * 7 + i]) <= Htarg, 0)) {
-						pdata[19] = nonce;
+						/* Reconstruct the nonce only for a rare target hit. */
+						pdata[19] = (uint32_t)(base + (uint64_t)i * step);
 						sha256d_80_swap(hash, pdata);
 						if (fulltest(hash, ptarget)) {
 							work_set_target_ratio(work, hash);
