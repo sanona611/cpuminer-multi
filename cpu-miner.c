@@ -207,22 +207,26 @@ static bool stratum_increment_xnonce2(struct stratum_ctx *sctx)
 {
 	int bits = stratum_xnonce2_bits(sctx);
 	size_t bytes = stratum_xnonce2_bytes(sctx, bits);
-	int i;
+	size_t i;
 	unsigned int used;
 
-	/* E2 is displayed as a big-endian hex string. Increment from the
-	 * rightmost byte so the visible value really does increase by one. */
-	for (i = (int)bytes - 1; i >= 0; i--) {
+	/*
+	 * Treat extranonce2 as a little-endian byte array, matching the
+	 * Stratum bytes and the E2= shareinfo display. Increment the least
+	 * significant byte first so the visible sequence is 000...00,
+	 * 0100...00, 0200...00, and so on.
+	 */
+	for (i = 0; i < bytes; i++) {
 		if (++sctx->job.xnonce2[i] != 0)
 			break;
 	}
 
 	used = (unsigned int)(bits & 7);
 	if (used && bytes)
-		sctx->job.xnonce2[0] &= (uchar)((1U << used) - 1U);
+		sctx->job.xnonce2[bytes - 1] &= (uchar)((1U << used) - 1U);
 
 	/* Overflow means the selected E2 width has reached its maximum. */
-	return i < 0;
+	return i == bytes;
 }
 
 static bool stratum_shift_xnonce2(struct stratum_ctx *sctx)
