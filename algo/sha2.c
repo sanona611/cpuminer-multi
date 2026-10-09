@@ -599,11 +599,11 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	uint32_t n = pdata[19] - 1;
 
 #ifdef HAVE_SHA256_8WAY
-	if (sha256_use_8way())
+	if (opt_nonce_step == 1 && sha256_use_8way())
 		return scanhash_sha256d_8way(thr_id, work, max_nonce, hashes_done);
 #endif
 #ifdef HAVE_SHA256_4WAY
-	if (sha256_use_4way())
+	if (opt_nonce_step == 1 && sha256_use_4way())
 		return scanhash_sha256d_4way(thr_id, work, max_nonce, hashes_done);
 #endif
 	
