@@ -4561,6 +4561,10 @@ int main(int argc, char *argv[]) {
 		opt_n_threads,
 		algo_names[opt_algo]);
 
+	if (opt_algo == ALGO_SHA256D)
+		applog(LOG_NOTICE, "SHA256d implementation: %s",
+			sha256d_get_implementation());
+
 	/* main loop - simply wait for workio thread to exit */
 	pthread_join(thr_info[work_thr_id].pth, NULL);
 

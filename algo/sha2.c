@@ -586,6 +586,22 @@ static inline int scanhash_sha256d_8way(int thr_id, struct work *work,
 
 #endif /* HAVE_SHA256_8WAY */
 
+const char *sha256d_get_implementation(void)
+{
+	if (opt_nonce_step > 1)
+		return "Scalar (forced by --nonce-step)";
+
+#ifdef HAVE_SHA256_8WAY
+	if (sha256_use_8way())
+		return "AVX2 (8-way)";
+#endif
+#ifdef HAVE_SHA256_4WAY
+	if (sha256_use_4way())
+		return "SSE/4-way SIMD";
+#endif
+	return "Scalar (no supported SHA256 SIMD path)";
+}
+
 int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
 {
 	uint32_t _ALIGN(128) data[64];
