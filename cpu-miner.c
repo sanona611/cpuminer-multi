@@ -2008,7 +2008,7 @@ err_out:
 	return false;
 }
 
-static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
+static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool per_thread_randomize)
 {
 	uint32_t extraheader[32] = { 0 };
 	uchar merkle_root[64] = { 0 };
@@ -2023,6 +2023,28 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 	} else {
 		free(work->job_id);
 		work->job_id = strdup(sctx->job.job_id);
+
+		/*
+		 * In randomize mode, each mining thread advances the extranonce2
+		 * stored in its own work item. Temporarily put that value into the
+		 * coinbase while building the merkle root, then restore the shared
+		 * Stratum coinbase so other threads are unaffected.
+		 */
+		uchar *saved_xnonce2 = NULL;
+		bool use_thread_xnonce2 = per_thread_randomize && opt_randomize &&
+			work->xnonce2 && work->xnonce2_len == sctx->xnonce2_size;
+		if (use_thread_xnonce2) {
+			saved_xnonce2 = (uchar*) malloc(sctx->xnonce2_size);
+			if (saved_xnonce2) {
+				memcpy(saved_xnonce2, sctx->job.xnonce2, sctx->xnonce2_size);
+				for (size_t t = 0; t < sctx->xnonce2_size && !(++work->xnonce2[t]); t++)
+					;
+				memcpy(sctx->job.xnonce2, work->xnonce2, sctx->xnonce2_size);
+			} else {
+				use_thread_xnonce2 = false;
+			}
+		}
+
 		work->xnonce2_len = sctx->xnonce2_size;
 		work->xnonce2 = (uchar*) realloc(work->xnonce2, sctx->xnonce2_size);
 		memcpy(work->xnonce2, sctx->job.xnonce2, sctx->xnonce2_size);
@@ -2062,9 +2084,11 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 				sha256d(merkle_root, merkle_root, 64);
 		}
 
-		/* Increment extranonce2 */
-		for (size_t t = 0; t < sctx->xnonce2_size && !(++sctx->job.xnonce2[t]); t++)
-			;
+		/* Preserve factory shared extranonce2 behavior outside randomize mode. */
+		if (!use_thread_xnonce2) {
+			for (size_t t = 0; t < sctx->xnonce2_size && !(++sctx->job.xnonce2[t]); t++)
+				;
+		}
 
 		/* Assemble block header */
 		memset(work->data, 0, 128);
@@ -2134,6 +2158,10 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 				work->data[i] = swab32(work->data[i]);
 		}
 
+		if (saved_xnonce2) {
+			memcpy(sctx->job.xnonce2, saved_xnonce2, sctx->xnonce2_size);
+			free(saved_xnonce2);
+		}
 		pthread_mutex_unlock(&sctx->work_lock);
 
 		if (opt_debug && opt_algo != ALGO_DECRED && opt_algo != ALGO_SIA) {
@@ -2331,6 +2359,7 @@ static void *miner_thread(void *userdata)
 		struct timeval tv_start, tv_end, diff;
 		int64_t max64;
 		bool regen_work = false;
+		bool thread_work_regenerated = false;
 		int wkcmp_offset = 0;
 		int nonce_oft = 19*sizeof(uint32_t); // 76
 		int wkcmp_sz = nonce_oft;
@@ -2380,11 +2409,18 @@ static void *miner_thread(void *userdata)
 			}
 
 			// to clean: is g_work loaded before the memcmp ?
-			regen_work = regen_work || ( nonce_exhausted_now
-				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
-				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
-			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work);
+			if (opt_randomize && nonce_exhausted_now &&
+			    work.job_id && g_work.job_id &&
+			    strcmp(work.job_id, g_work.job_id) == 0) {
+				stratum_gen_work(&stratum, &work, true);
+				thread_work_regenerated = true;
+			} else {
+				regen_work = regen_work || ( nonce_exhausted_now
+					&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
+					 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
+				if (regen_work) {
+					stratum_gen_work(&stratum, &g_work, false);
+				}
 			}
 
 		} else {
@@ -2408,7 +2444,18 @@ static void *miner_thread(void *userdata)
 				continue;
 			}
 		}
-		if (memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
+		if (thread_work_regenerated) {
+			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
+			const uint32_t start_nonce = 0xffffffffU / opt_n_threads * thr_id;
+			const uint32_t thread_end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+			*nonceptr = opt_randomize_mt ?
+				mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce) :
+				system_random_nonce(start_nonce, thread_end_nonce);
+			end_nonce = (uint32_t)((uint64_t)*nonceptr +
+				(opt_randomize_span ? (uint64_t)opt_randomize_span : (uint64_t)thr_hashrates[thr_id]));
+			nonce_initialized = true;
+		}
+		else if (memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 			jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0)
 		{
 			if (opt_nonce_continue && !opt_randomize) {
@@ -3152,7 +3199,7 @@ static void *stratum_thread(void *userdata)
 			(!g_work_time || strcmp(stratum.job.job_id, g_work.job_id)) )
 		{
 			pthread_mutex_lock(&g_work_lock);
-			stratum_gen_work(&stratum, &g_work);
+			stratum_gen_work(&stratum, &g_work, false);
 			time(&g_work_time);
 			pthread_mutex_unlock(&g_work_lock);
 
