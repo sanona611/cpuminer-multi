@@ -467,7 +467,7 @@ static struct option const options[] = {
 	{ "no-color", 0, NULL, 1002 },
 	{ "debug", 0, NULL, 'D' },
 	{ "shareinfo", 0, NULL, 1063 },
-	{ "nonce-continue", 0, NULL, 1064 },
+	{ "nonce-continue", 0, NULL, 1065 },
 	{ "vroll", 2, NULL, 1064 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
@@ -3462,7 +3462,7 @@ void parse_arg(int key, char *arg)
 	case 1063:
 		opt_shareinfo = true;
 		break;
-	case 1064:
+	case 1065:
 		opt_nonce_continue = true;
 		break;
 	case 1064:
