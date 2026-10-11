@@ -469,7 +469,7 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize       Randomize scan range start to reduce duplicates\n\
+      --randomize-mt       Randomize scan range start to reduce duplicates\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -3624,7 +3624,7 @@ void parse_arg(int key, char *arg)
 			errno = 0;
 			span = strtoul(span_arg, &endp, 10);
 			if (errno || endp == span_arg || *endp != '\0' || span == 0 || span > UINT32_MAX) {
-				fprintf(stderr, "invalid --randomize range: %s\n", span_arg);
+				fprintf(stderr, "invalid --randomize-mt range: %s\n", span_arg);
 				show_usage_and_exit(1);
 			}
 			opt_randomize_span = (uint32_t)span;
