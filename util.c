@@ -1366,7 +1366,7 @@ static int vroll_mt_index = 624;
 /* Randomize mode keeps an independent rolled version and timer per thread. */
 /* --vroll N thread state must also support high -t values such as -t 64.
  * MAX_CPUS is only 16 in this fork and is too small for these per-thread slots. */
-#define MAX_VROLL_THREADS 256
+#define MAX_VROLL_THREADS 10000
 static uint32_t vroll_thread_version[MAX_VROLL_THREADS];
 static time_t vroll_thread_last[MAX_VROLL_THREADS];
 static int vroll_thread_block[MAX_VROLL_THREADS];
