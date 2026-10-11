@@ -3695,7 +3695,8 @@ void parse_arg(int key, char *arg)
 			errno = 0;
 			span = strtoul(span_arg, &endp, 10);
 			if (errno || endp == span_arg || *endp != '\0' || span == 0 || span > UINT32_MAX) {
-				fprintf(stderr, "invalid randomize range: %s\n", span_arg);
+				fprintf(stderr, "invalid --%s range: %s\n",
+					key == 1024 ? "randomize-mt" : "randomize", span_arg);
 				show_usage_and_exit(1);
 			}
 			opt_randomize_span = (uint32_t)span;
