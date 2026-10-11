@@ -2097,7 +2097,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool p
 		work->data[0] = le32dec(sctx->job.version);
 		work->version_bits = 0;
 		if (opt_vroll && sctx->version_rolling &&
-		    !(opt_vroll_interval > 0))
+		    false)
 			stratum_vroll_update_locked(sctx, work);
 		for (i = 0; i < 8; i++)
 			work->data[1 + i] = le32dec((uint32_t *) sctx->job.prevhash + i);
@@ -2404,7 +2404,7 @@ static void *miner_thread(void *userdata)
 
 			bool vroll_nonce_exhausted = nonce_exhausted_now && !opt_randomize;
 			if (opt_vroll && stratum.version_rolling &&
-			    !(opt_vroll_interval > 0) &&
+			    false &&
 			    (vroll_nonce_exhausted || stratum_vroll_due(&stratum))) {
 				bool rolled = vroll_nonce_exhausted
 					? stratum_vroll_force_update_locked(&stratum, &g_work)
@@ -2525,7 +2525,7 @@ static void *miner_thread(void *userdata)
 			++(*nonceptr);
 			nonce_initialized = true;
 		}
-		if (have_stratum && opt_vroll && opt_vroll_interval > 0)
+		if (have_stratum && opt_vroll)
 			stratum_vroll_update_thread_locked(&stratum, &work, thr_id);
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
