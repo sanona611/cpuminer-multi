@@ -1356,6 +1356,7 @@ out:
 }
 
 extern bool opt_extranonce;
+extern bool opt_randomize;
 
 #define VROLL_MASK 0x1fffe000U
 
