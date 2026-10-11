@@ -292,6 +292,7 @@ bool opt_redirect = true;
 bool opt_showdiff = true;
 bool opt_extranonce = true;
 bool opt_shareinfo = false;
+bool opt_nonce_continue = false;
 bool opt_vroll = false;
 int opt_vroll_interval = 0;
 bool want_longpoll = true;
@@ -529,6 +530,7 @@ static struct option const options[] = {
 	{ "no-color", 0, NULL, 1002 },
 	{ "debug", 0, NULL, 'D' },
 	{ "shareinfo", 0, NULL, 1063 },
+	{ "nonce-continue", 0, NULL, 1064 },
 	{ "vroll", 2, NULL, 1064 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
@@ -2339,44 +2341,60 @@ static void *miner_thread(void *userdata)
 		if (memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 			jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0)
 		{
-			uint32_t old_nonce = *nonceptr;
-			bool nonce_exhausted = nonce_initialized && old_nonce >= end_nonce;
-			bool had_old_job = work.job_id && work.job_id[0];
-			const char *new_job_id = g_work.job_id ? g_work.job_id : "";
-
+			if (opt_nonce_continue) {
+	
+				uint32_t old_nonce = *nonceptr;
+				bool nonce_exhausted = nonce_initialized && old_nonce >= end_nonce;
+				bool had_old_job = work.job_id && work.job_id[0];
+				const char *new_job_id = g_work.job_id ? g_work.job_id : "";
+	
+				work_free(&work);
+				work_copy(&work, &g_work);
+				nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
+	
+				if (!nonce_initialized || nonce_exhausted) {
+					const uint32_t start_nonce =
+						0xffffffffU / opt_n_threads * thr_id;
+					const uint32_t thread_end_nonce =
+						0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+					*nonceptr = start_nonce;
+					if (opt_randomize) {
+						*nonceptr = mt19937_random_nonce(
+							thr_id, start_nonce, thread_end_nonce);
+						end_nonce = (uint32_t)(
+							(uint64_t)*nonceptr +
+							(uint64_t)thr_hashrates[thr_id]);
+					}
+					nonce_initialized = true;
+					if (opt_debug)
+						applog(LOG_DEBUG,
+							"NONCE RESET: thr=%d job=%s nonce=%08x%s",
+							thr_id, new_job_id, *nonceptr,
+							had_old_job ? " (new job)" : " (initial)");
+				} else {
+					*nonceptr = old_nonce;
+					if (opt_debug)
+						applog(LOG_DEBUG,
+							"NONCE CONTINUE: thr=%d job=%s nonce=%08x",
+							thr_id, new_job_id, *nonceptr);
+				}
+			} else {
 			work_free(&work);
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-
-			if (!nonce_initialized || nonce_exhausted) {
-				const uint32_t start_nonce =
-					0xffffffffU / opt_n_threads * thr_id;
-				const uint32_t thread_end_nonce =
-					0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
-				*nonceptr = start_nonce;
-				if (opt_randomize) {
-					*nonceptr = mt19937_random_nonce(
-						thr_id, start_nonce, thread_end_nonce);
-					end_nonce = (uint32_t)(
-						(uint64_t)*nonceptr +
-						(uint64_t)thr_hashrates[thr_id]);
-				}
-				nonce_initialized = true;
-				if (opt_debug)
-					applog(LOG_DEBUG,
-						"NONCE RESET: thr=%d job=%s nonce=%08x%s",
-						thr_id, new_job_id, *nonceptr,
-						had_old_job ? " (new job)" : " (initial)");
-			} else {
-				*nonceptr = old_nonce;
-				if (opt_debug)
-					applog(LOG_DEBUG,
-						"NONCE CONTINUE: thr=%d job=%s nonce=%08x",
-						thr_id, new_job_id, *nonceptr);
+			const uint32_t start_nonce = 0xffffffffU / opt_n_threads * thr_id;
+			const uint32_t thread_end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+			*nonceptr = start_nonce;
+			if (opt_randomize) {
+				*nonceptr = mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce);
+				end_nonce = (uint32_t)((uint64_t)*nonceptr + (uint64_t)thr_hashrates[thr_id]);
 			}
+			}
+
 		} else {
 			++(*nonceptr);
-			nonce_initialized = true;
+			if (opt_nonce_continue)
+				nonce_initialized = true;
 		}
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
@@ -3519,6 +3537,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1063:
 		opt_shareinfo = true;
+		break;
+	case 1064:
+		opt_nonce_continue = true;
 		break;
 	case 1064:
 		opt_vroll = true;
