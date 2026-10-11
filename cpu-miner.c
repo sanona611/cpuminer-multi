@@ -3616,11 +3616,9 @@ void parse_arg(int key, char *arg)
 		opt_max_rate = d;
 		break;
 	case 1024: {
-		const char *span_arg = optarg;
+		const char *span_arg = arg;
 		char *endp = NULL;
 		unsigned long span = 0;
-		if (!span_arg && optind < argc && argv[optind][0] != '-')
-			span_arg = argv[optind++];
 		if (span_arg) {
 			errno = 0;
 			span = strtoul(span_arg, &endp, 10);
@@ -3695,7 +3693,7 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
-		if (key == 1064 && optind < argc && argv[optind][0] != '-' &&
+		if ((key == 1064 || key == 1024) && optind < argc && argv[optind][0] != '-' &&
 		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
 			parse_arg(key, argv[optind]);
 			optind++;
