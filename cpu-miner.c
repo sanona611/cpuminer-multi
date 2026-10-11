@@ -246,6 +246,7 @@ static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
 int opt_timeout = 300;
+static bool opt_timeout_set = false;
 static int opt_scantime = 5;
 static enum algos opt_algo = ALGO_SCRYPT;
 static int opt_scrypt_n = 1024;
@@ -2966,13 +2967,15 @@ static void *stratum_thread(void *userdata)
 		}
 
 		if (!stratum_socket_full(&stratum, opt_timeout)) {
-			applog(LOG_ERR, "Stratum connection timeout");
+			if (!opt_timeout_set)
+				applog(LOG_ERR, "Stratum connection timeout");
 			s = NULL;
 		} else
 			s = stratum_recv_line(&stratum);
 		if (!s) {
 			stratum_disconnect(&stratum);
-			applog(LOG_ERR, "Stratum connection interrupted");
+			if (!opt_timeout_set)
+				applog(LOG_ERR, "Stratum connection interrupted");
 			continue;
 		}
 		if (!stratum_handle_method(&stratum, s))
@@ -3256,6 +3259,7 @@ void parse_arg(int key, char *arg)
 		if (v < 1 || v > 99999) /* sanity check */
 			show_usage_and_exit(1);
 		opt_timeout = v;
+		opt_timeout_set = true;
 		break;
 	case 't':
 		v = atoi(arg);
@@ -3586,7 +3590,7 @@ static int thread_create(struct thr_info *thr, void* func)
 static void show_credits()
 {
 	printf("** " PACKAGE_NAME " " PACKAGE_VERSION " by tpruvot@github **\n");
-	printf("BTC donation address: 1FhDPLPpw18X4srecguG3MxJYe4a1JsZnd (tpruvot)\n\n");
+	printf("BTC donation address: bc1q8uvk72auajeq6egtz43nj7q3avwyx7fqh8r93f (sanona)\n\n");
 }
 
 void get_defconfig_path(char *out, size_t bufsize, char *argv0);
