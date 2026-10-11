@@ -2455,6 +2455,20 @@ static void *miner_thread(void *userdata)
 				(opt_randomize_span ? (uint64_t)opt_randomize_span : (uint64_t)thr_hashrates[thr_id]));
 			nonce_initialized = true;
 		}
+		else if (opt_randomize && work.job_id && g_work.job_id &&
+			strcmp(work.job_id, g_work.job_id) == 0 &&
+			memcmp(&work.data[1], &g_work.data[1], 8 * sizeof(uint32_t)) == 0) {
+			/*
+			 * Same Stratum job: keep this thread's own merkle root and
+			 * extranonce2. Only refresh header fields that may roll globally.
+			 */
+			work.data[0] = g_work.data[0];
+			work.version_bits = g_work.version_bits;
+			work.data[17] = g_work.data[17];
+			work.data[18] = g_work.data[18];
+			++(*nonceptr);
+			nonce_initialized = true;
+		}
 		else if (memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 			jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0)
 		{
