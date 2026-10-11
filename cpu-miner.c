@@ -3615,9 +3615,24 @@ void parse_arg(int key, char *arg)
 		if (p) d *= 1e9;
 		opt_max_rate = d;
 		break;
-	case 1024:
+	case 1024: {
+		const char *span_arg = optarg;
+		char *endp = NULL;
+		unsigned long span = 0;
+		if (!span_arg && optind < argc && argv[optind][0] != '-')
+			span_arg = argv[optind++];
+		if (span_arg) {
+			errno = 0;
+			span = strtoul(span_arg, &endp, 10);
+			if (errno || endp == span_arg || *endp != '\0' || span == 0 || span > UINT32_MAX) {
+				fprintf(stderr, "invalid --randomize range: %s\n", span_arg);
+				show_usage_and_exit(1);
+			}
+			opt_randomize_span = (uint32_t)span;
+		}
 		opt_randomize = true;
 		break;
+	}
 	case 'V':
 		show_version_and_exit();
 	case 'h':
