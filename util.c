@@ -1422,7 +1422,7 @@ bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *w
 	time_t now;
 	bool change = false;
 
-	if (!opt_vroll || opt_vroll_interval <= 0 ||
+	if (!opt_vroll ||
 	    !sctx->version_rolling || !work || thr_id < 0 || thr_id >= MAX_VROLL_THREADS)
 		return false;
 
@@ -1433,7 +1433,7 @@ bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *w
 	if (!vroll_thread_initialized[thr_id] ||
 	    vroll_thread_block[thr_id] != sctx->bloc_height ||
 	    (vroll_thread_version[thr_id] & ~internal_mask) != (base & ~internal_mask) ||
-	    now >= vroll_thread_last[thr_id] + opt_vroll_interval) {
+	    (opt_vroll_interval > 0 && now >= vroll_thread_last[thr_id] + opt_vroll_interval)) {
 		do {
 			bits = vroll_mt_rand() & sctx->version_mask;
 		} while (!bits && sctx->version_mask);
