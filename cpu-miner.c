@@ -536,8 +536,8 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize[=N]    Randomize scan start using system entropy; optional N sets range width\n\
-      --randomize-mt[=N] Randomize scan start using Mersenne Twister; optional N sets range width\n\
+      --randomize [N]      Randomize scan start using system entropy; optional N sets range width\n\
+      --randomize-mt [N] Randomize scan start using Mersenne Twister; optional N sets range width\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -554,7 +554,7 @@ Options:\n\
       --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
       --shareinfo       show accepted share thread/nonce/E1/E2/time/version info\n\
-      --vroll[=N]       enable version rolling; optional N sets interval in seconds\\n\\
+      --vroll[=N]       enable version rolling; optional N sets interval in seconds\n\
       --nonce-continue  preserve each thread nonce cursor across Stratum jobs\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n\
       --hide-diff       Hide submitted block and net difficulty\n"
