@@ -376,6 +376,8 @@ int opt_maxlograte = 5;
 bool opt_randomize = false;
 static bool opt_randomize_mt = false;
 static uint32_t opt_randomize_span = 0;
+static bool opt_e2max_set = false;
+static uint64_t opt_e2max = 0;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
@@ -2039,8 +2041,24 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work, bool p
 			saved_xnonce2 = (uchar*) malloc(sctx->xnonce2_size);
 			if (saved_xnonce2) {
 				memcpy(saved_xnonce2, sctx->job.xnonce2, sctx->xnonce2_size);
-				for (size_t t = 0; t < sctx->xnonce2_size && !(++work->xnonce2[t]); t++)
-					;
+				if (opt_e2max_set) {
+					uint64_t current = 0;
+					size_t t, low_bytes = sctx->xnonce2_size < sizeof(current) ? sctx->xnonce2_size : sizeof(current);
+					bool high_nonzero = false;
+					for (t = 0; t < low_bytes; t++)
+						current |= (uint64_t)work->xnonce2[t] << (8 * t);
+					for (t = sizeof(current); t < sctx->xnonce2_size; t++)
+						high_nonzero = high_nonzero || work->xnonce2[t] != 0;
+					if (high_nonzero || current >= opt_e2max) {
+						memset(work->xnonce2, 0, sctx->xnonce2_size);
+					} else {
+						for (t = 0; t < sctx->xnonce2_size && !(++work->xnonce2[t]); t++)
+							;
+					}
+				} else {
+					for (size_t t = 0; t < sctx->xnonce2_size && !(++work->xnonce2[t]); t++)
+						;
+				}
 				memcpy(sctx->job.xnonce2, work->xnonce2, sctx->xnonce2_size);
 			} else {
 				use_thread_xnonce2 = false;
@@ -3757,6 +3775,19 @@ void parse_arg(int key, char *arg)
 		if (p) d *= 1e9;
 		opt_max_rate = d;
 		break;
+	case 1066: { /* --e2max */
+		char *endp = NULL;
+		unsigned long long value;
+		errno = 0;
+		value = strtoull(arg, &endp, 10);
+		if (errno || endp == arg || *endp != '\0' || value == 0) {
+			fprintf(stderr, "invalid --e2max value: %s\\n", arg ? arg : "(missing)");
+			show_usage_and_exit(1);
+		}
+		opt_e2max = (uint64_t)value;
+		opt_e2max_set = true;
+		break;
+	}
 	case 1024:
 	case 1025: {
 		const char *span_arg = arg;
