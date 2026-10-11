@@ -2401,9 +2401,10 @@ static void *miner_thread(void *userdata)
 
 			pthread_mutex_lock(&g_work_lock);
 
+			bool vroll_nonce_exhausted = nonce_exhausted_now && !opt_randomize;
 			if (opt_vroll && stratum.version_rolling &&
-			    (nonce_exhausted_now || stratum_vroll_due(&stratum))) {
-				bool rolled = nonce_exhausted_now
+			    (vroll_nonce_exhausted || stratum_vroll_due(&stratum))) {
+				bool rolled = vroll_nonce_exhausted
 					? stratum_vroll_force_update_locked(&stratum, &g_work)
 					: stratum_vroll_update(&stratum, &g_work);
 				if (rolled)
