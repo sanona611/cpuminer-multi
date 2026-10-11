@@ -228,6 +228,7 @@ bool opt_redirect = true;
 bool opt_showdiff = true;
 bool opt_extranonce = true;
 bool opt_shareinfo = false;
+bool opt_nonce_continue = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool have_gbt = true;
@@ -418,6 +419,7 @@ Options:\n\
       --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
       --shareinfo       show accepted share thread/nonce/E1/E2/time/version info\n\
+      --nonce-continue  preserve each thread nonce cursor across Stratum jobs\\n\\
   -P, --protocol-dump   verbose dump of protocol-level activities\n\
       --hide-diff       Hide submitted block and net difficulty\n"
 #ifdef HAVE_SYSLOG_H
@@ -463,6 +465,7 @@ static struct option const options[] = {
 	{ "no-color", 0, NULL, 1002 },
 	{ "debug", 0, NULL, 'D' },
 	{ "shareinfo", 0, NULL, 1063 },
+	{ "nonce-continue", 0, NULL, 1064 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
 	{ "diff-multiplier", 1, NULL, 'm' },
@@ -2225,35 +2228,46 @@ static void *miner_thread(void *userdata)
 		if (memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 			jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0)
 		{
-			uint32_t old_nonce = *nonceptr;
-			bool nonce_exhausted = nonce_initialized && old_nonce >= end_nonce;
-			bool had_old_job = work.job_id && work.job_id[0];
-			const char *new_job_id = g_work.job_id ? g_work.job_id : "";
+			if (opt_nonce_continue) {
+				uint32_t old_nonce = *nonceptr;
+				bool nonce_exhausted = nonce_initialized && old_nonce >= end_nonce;
+				bool had_old_job = work.job_id && work.job_id[0];
+				const char *new_job_id = g_work.job_id ? g_work.job_id : "";
 
-			work_free(&work);
-			work_copy(&work, &g_work);
-			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
+				work_free(&work);
+				work_copy(&work, &g_work);
+				nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
 
-			if (!nonce_initialized || nonce_exhausted) {
+				if (!nonce_initialized || nonce_exhausted) {
+					*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
+					if (opt_randomize)
+						nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
+					nonce_initialized = true;
+					if (opt_debug)
+						applog(LOG_DEBUG,
+							"NONCE RESET: thr=%d job=%s nonce=%08x%s",
+							thr_id, new_job_id, *nonceptr,
+							had_old_job ? " (new job)" : " (initial)");
+				} else {
+					*nonceptr = old_nonce;
+					if (opt_debug)
+						applog(LOG_DEBUG,
+							"NONCE CONTINUE: thr=%d job=%s nonce=%08x",
+							thr_id, new_job_id, *nonceptr);
+				}
+			} else {
+				/* Match the original shareinfo branch: reset nonce for each new work item. */
+				work_free(&work);
+				work_copy(&work, &g_work);
+				nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
 				*nonceptr = 0xffffffffU / opt_n_threads * thr_id;
 				if (opt_randomize)
 					nonceptr[0] += ((rand()*4) & UINT32_MAX) / opt_n_threads;
-				nonce_initialized = true;
-				if (opt_debug)
-					applog(LOG_DEBUG,
-						"NONCE RESET: thr=%d job=%s nonce=%08x%s",
-						thr_id, new_job_id, *nonceptr,
-						had_old_job ? " (new job)" : " (initial)");
-			} else {
-				*nonceptr = old_nonce;
-				if (opt_debug)
-					applog(LOG_DEBUG,
-						"NONCE CONTINUE: thr=%d job=%s nonce=%08x",
-						thr_id, new_job_id, *nonceptr);
 			}
 		} else {
 			++(*nonceptr);
-			nonce_initialized = true;
+			if (opt_nonce_continue)
+				nonce_initialized = true;
 		}
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
@@ -3393,6 +3407,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1063:
 		opt_shareinfo = true;
+		break;
+	case 1064:
+		opt_nonce_continue = true;
 		break;
 	case 1013:
 		opt_showdiff = true;
