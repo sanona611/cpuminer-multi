@@ -628,6 +628,7 @@ static struct option const options[] = {
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 2, NULL, 1025 },
 	{ "randomize-mt", 2, NULL, 1024 },
+	{ "e2max", 1, NULL, 1066 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
 	{ "hide-diff", 0, NULL, 1014 },
