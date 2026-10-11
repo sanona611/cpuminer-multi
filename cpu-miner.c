@@ -419,7 +419,7 @@ Options:\n\
       --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
       --shareinfo       show accepted share thread/nonce/E1/E2/time/version info\n\
-      --nonce-continue  preserve each thread nonce cursor across Stratum jobs\\n\\
+      --nonce-continue  preserve each thread nonce cursor across Stratum jobs\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n\
       --hide-diff       Hide submitted block and net difficulty\n"
 #ifdef HAVE_SYSLOG_H
