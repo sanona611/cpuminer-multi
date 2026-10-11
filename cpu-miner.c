@@ -3893,7 +3893,7 @@ static int thread_create(struct thr_info *thr, void* func)
 
 static void show_credits()
 {
-	printf("** " PACKAGE_NAME " " PACKAGE_VERSION " by tpruvot@github **\n");
+	printf("** cpuminer-pro by sanona611@github **\\n");
 	printf("BTC donation address: bc1q8uvk72auajeq6egtz43nj7q3avwyx7fqh8r93f (sanona)\n\n");
 }
 
