@@ -1074,6 +1074,21 @@ out:
 #define YAY "yay!!!"
 #define BOO "booooo"
 
+static void shareinfo_reverse_hex_bytes(char *hex)
+{
+	size_t len = strlen(hex);
+	size_t i;
+
+	for (i = 0; i < len / 4; i++) {
+		char a = hex[i * 2];
+		char b = hex[i * 2 + 1];
+		hex[i * 2] = hex[len - 2 - i * 2];
+		hex[i * 2 + 1] = hex[len - 1 - i * 2];
+		hex[len - 2 - i * 2] = a;
+		hex[len - 1 - i * 2] = b;
+	}
+}
+
 static void shareinfo_get_time_nonce(const struct work *work, uint32_t *ntime, uint32_t *nonce)
 {
 	switch (opt_algo) {
@@ -1159,6 +1174,8 @@ static int share_result(int result, struct work *work, const char *reason)
 	char suppl[32] = { 0 };
 	char s[345];
 	char shareinfo_suffix[512] = { 0 };
+	char e1_le[129] = { 0 };
+	char e2_le[129] = { 0 };
 	double hashrate;
 	double sharediff = work ? work->sharediff : stratum.sharediff;
 	int i;
@@ -1167,10 +1184,14 @@ static int share_result(int result, struct work *work, const char *reason)
 		shareinfo = shareinfo_pop();
 
 	if (opt_shareinfo && shareinfo) {
+		snprintf(e1_le, sizeof(e1_le), "%s", shareinfo->e1);
+		snprintf(e2_le, sizeof(e2_le), "%s", shareinfo->e2);
+		shareinfo_reverse_hex_bytes(e1_le);
+		shareinfo_reverse_hex_bytes(e2_le);
 		snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 			"\t<thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
-			shareinfo->thr_id, shareinfo->nonce, shareinfo->e1, shareinfo->e2,
-			shareinfo->ntime, shareinfo->version);
+			shareinfo->thr_id, swab32(shareinfo->nonce), e1_le, e2_le,
+			swab32(shareinfo->ntime), swab32(shareinfo->version));
 	}
 
 	hashrate = 0.;
