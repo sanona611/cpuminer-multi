@@ -2342,7 +2342,7 @@ static void *miner_thread(void *userdata)
 		if (memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 			jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0)
 		{
-			if (opt_nonce_continue) {
+			if (opt_nonce_continue && !opt_randomize) {
 	
 				uint32_t old_nonce = *nonceptr;
 				bool nonce_exhausted = nonce_initialized && old_nonce >= end_nonce;
@@ -2390,12 +2390,12 @@ static void *miner_thread(void *userdata)
 				*nonceptr = mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce);
 				end_nonce = (uint32_t)((uint64_t)*nonceptr + (uint64_t)thr_hashrates[thr_id]);
 			}
+			nonce_initialized = true;
 			}
 
 		} else {
 			++(*nonceptr);
-			if (opt_nonce_continue)
-				nonce_initialized = true;
+			nonce_initialized = true;
 		}
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
