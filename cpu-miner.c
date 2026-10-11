@@ -1192,7 +1192,7 @@ static int share_result(int result, struct work *work, const char *reason)
 		shareinfo_reverse_hex_bytes(e1_le);
 		shareinfo_reverse_hex_bytes(e2_le);
 		snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
-			"\t<thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
+			" <thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
 			shareinfo->thr_id, swab32(shareinfo->nonce), e1_le, e2_le,
 			swab32(shareinfo->ntime), swab32(shareinfo->version));
 	}
