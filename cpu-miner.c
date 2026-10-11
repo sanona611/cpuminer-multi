@@ -380,6 +380,7 @@ static int opt_retries = -1;
 static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
 int opt_timeout = 300;
+static bool opt_timeout_set = false;
 static int opt_scantime = 5;
 static enum algos opt_algo = ALGO_SCRYPT;
 static int opt_scrypt_n = 1024;
@@ -535,8 +536,8 @@ Options:\n\
   -T, --timeout=N       timeout for long poll and stratum (default: 300 seconds)\n\
   -s, --scantime=N      upper bound on time spent scanning current work when\n\
                           long polling is unavailable, in seconds (default: 5)\n\
-      --randomize         Randomize scan range start using system entropy\n\
-      --randomize-mt      Randomize scan range start using Mersenne Twister\n\
+      --randomize[=N]    Randomize scan start using system entropy; optional N sets range width\n\
+      --randomize-mt[=N] Randomize scan start using Mersenne Twister; optional N sets range width\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
@@ -553,6 +554,7 @@ Options:\n\
       --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
       --shareinfo       show accepted share thread/nonce/E1/E2/time/version info\n\
+      --vroll[=N]       enable version rolling; optional N sets interval in seconds\\n\\
       --nonce-continue  preserve each thread nonce cursor across Stratum jobs\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n\
       --hide-diff       Hide submitted block and net difficulty\n"
@@ -3236,13 +3238,15 @@ static void *stratum_thread(void *userdata)
 		}
 
 		if (!stratum_socket_full(&stratum, opt_timeout)) {
-			applog(LOG_ERR, "Stratum connection timeout");
+			if (!opt_timeout_set)
+				applog(LOG_ERR, "Stratum connection timeout");
 			s = NULL;
 		} else
 			s = stratum_recv_line(&stratum);
 		if (!s) {
 			stratum_disconnect(&stratum);
-			applog(LOG_ERR, "Stratum connection interrupted");
+			if (!opt_timeout_set)
+				applog(LOG_ERR, "Stratum connection interrupted");
 			continue;
 		}
 		if (!stratum_handle_method(&stratum, s))
@@ -3526,6 +3530,7 @@ void parse_arg(int key, char *arg)
 		if (v < 1 || v > 99999) /* sanity check */
 			show_usage_and_exit(1);
 		opt_timeout = v;
+		opt_timeout_set = true;
 		break;
 	case 't':
 		v = atoi(arg);
@@ -3889,7 +3894,7 @@ static int thread_create(struct thr_info *thr, void* func)
 static void show_credits()
 {
 	printf("** " PACKAGE_NAME " " PACKAGE_VERSION " by tpruvot@github **\n");
-	printf("BTC donation address: 1FhDPLPpw18X4srecguG3MxJYe4a1JsZnd (tpruvot)\n\n");
+	printf("BTC donation address: bc1q8uvk72auajeq6egtz43nj7q3avwyx7fqh8r93f (sanona)\n\n");
 }
 
 void get_defconfig_path(char *out, size_t bufsize, char *argv0);
