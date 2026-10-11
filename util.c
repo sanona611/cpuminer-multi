@@ -1422,7 +1422,7 @@ bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *w
 	time_t now;
 	bool change = false;
 
-	if (!opt_randomize || !opt_vroll || opt_vroll_interval <= 0 ||
+	if (!opt_vroll || opt_vroll_interval <= 0 ||
 	    !sctx->version_rolling || !work || thr_id < 0 || thr_id >= MAX_VROLL_THREADS)
 		return false;
 
