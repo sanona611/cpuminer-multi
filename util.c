@@ -1362,6 +1362,12 @@ extern bool opt_extranonce;
 static uint32_t vroll_mt[624];
 static int vroll_mt_index = 624;
 
+/* Randomize mode keeps an independent rolled version and timer per thread. */
+static uint32_t vroll_thread_version[MAX_CPUS];
+static time_t vroll_thread_last[MAX_CPUS];
+static int vroll_thread_block[MAX_CPUS];
+static bool vroll_thread_initialized[MAX_CPUS];
+
 static void vroll_mt_seed(uint32_t seed)
 {
 	int i;
@@ -1400,6 +1406,47 @@ bool stratum_vroll_due(struct stratum_ctx *sctx)
 	if (!opt_vroll || !sctx->version_rolling || opt_vroll_interval <= 0)
 		return false;
 	return time(NULL) >= sctx->vroll_last + opt_vroll_interval;
+}
+
+/*
+ * In randomize mode with --vroll N, each thread selects its own version
+ * and holds it for N seconds. Caller holds the Stratum work lock.
+ */
+bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *work, int thr_id)
+{
+	uint32_t base, internal_mask, bits;
+	time_t now;
+	bool change = false;
+
+	if (!opt_randomize || !opt_vroll || opt_vroll_interval <= 0 ||
+	    !sctx->version_rolling || !work || thr_id < 0 || thr_id >= MAX_CPUS)
+		return false;
+
+	base = le32dec(sctx->job.version);
+	internal_mask = swab32(sctx->version_mask);
+	now = time(NULL);
+
+	if (!vroll_thread_initialized[thr_id] ||
+	    vroll_thread_block[thr_id] != sctx->bloc_height ||
+	    (vroll_thread_version[thr_id] & ~internal_mask) != (base & ~internal_mask) ||
+	    now >= vroll_thread_last[thr_id] + opt_vroll_interval) {
+		do {
+			bits = vroll_mt_rand() & sctx->version_mask;
+		} while (!bits && sctx->version_mask);
+		vroll_thread_version[thr_id] = (base & ~internal_mask) |
+			(swab32(bits) & internal_mask);
+		vroll_thread_last[thr_id] = now;
+		vroll_thread_block[thr_id] = sctx->bloc_height;
+		vroll_thread_initialized[thr_id] = true;
+		change = true;
+		if (opt_debug)
+			applog(LOG_DEBUG, "Stratum rolled version=%08x bits=%08x mask=%08x thr=%d (timed)",
+				vroll_thread_version[thr_id], bits, sctx->version_mask, thr_id);
+	}
+
+	work->version_bits = swab32(vroll_thread_version[thr_id] & internal_mask);
+	work->data[0] = vroll_thread_version[thr_id];
+	return change;
 }
 
 static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work *work, bool force)
