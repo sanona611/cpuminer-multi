@@ -62,6 +62,71 @@ BOOL WINAPI ConsoleHandler(DWORD);
 #define min(a,b) (a>b ? b : a)
 #define max(a,b) (a<b ? b : a)
 #endif
+/* MT19937 (Mersenne Twister) used for Randomize. */
+#define MT_N 624
+#define MT_M 397
+#define MT_MATRIX_A 0x9908b0dfU
+#define MT_UPPER_MASK 0x80000000U
+#define MT_LOWER_MASK 0x7fffffffU
+
+static uint32_t mt_state[MAX_CPUS][MT_N];
+static size_t mt_index[MAX_CPUS];
+static bool mt_initialized[MAX_CPUS];
+
+static void mt19937_seed(uint32_t *state, size_t *index, uint32_t seed)
+{
+	state[0] = seed;
+	for (size_t i = 1; i < MT_N; i++)
+		state[i] = 1812433253U * (state[i - 1] ^ (state[i - 1] >> 30)) + (uint32_t)i;
+	*index = MT_N;
+}
+
+static void mt19937_twist(uint32_t *state, size_t *index)
+{
+	for (size_t i = 0; i < MT_N; i++) {
+		uint32_t y = (state[i] & MT_UPPER_MASK) |
+			(state[(i + 1) % MT_N] & MT_LOWER_MASK);
+		state[i] = state[(i + MT_M) % MT_N] ^ (y >> 1);
+		if (y & 1U)
+			state[i] ^= MT_MATRIX_A;
+	}
+	*index = 0;
+}
+
+static uint32_t mt19937_rand32(int thr_id)
+{
+	uint32_t *state = mt_state[thr_id];
+	size_t *index = &mt_index[thr_id];
+	uint32_t y;
+
+	if (!mt_initialized[thr_id]) {
+		uint32_t seed = (uint32_t)time(NULL) ^
+			(uint32_t)(uintptr_t)state ^
+			(uint32_t)(thr_id * 0x9e3779b9U);
+		mt19937_seed(state, index, seed);
+		mt_initialized[thr_id] = true;
+	}
+	if (*index >= MT_N)
+		mt19937_twist(state, index);
+
+	y = state[(*index)++];
+	y ^= y >> 11;
+	y ^= (y << 7) & 0x9d2c5680U;
+	y ^= (y << 15) & 0xefc60000U;
+	y ^= y >> 18;
+	return y;
+}
+
+static uint32_t mt19937_random_nonce(int thr_id, uint32_t start_nonce,
+	uint32_t end_nonce)
+{
+	uint64_t span = (uint64_t)end_nonce - start_nonce + 1;
+	uint32_t random_value = mt19937_rand32(thr_id);
+	uint32_t offset =
+		(uint32_t)(((uint64_t)random_value * span) >> 32);
+
+	return start_nonce + offset;
+}
 /* Obtain random data from the operating system entropy source. */
 #if defined(__linux__)
 #include <sys/random.h>
@@ -309,6 +374,7 @@ static bool opt_background = false;
 bool opt_quiet = false;
 int opt_maxlograte = 5;
 bool opt_randomize = false;
+static bool opt_randomize_mt = false;
 static uint32_t opt_randomize_span = 0;
 static int opt_retries = -1;
 static int opt_fail_pause = 10;
@@ -555,6 +621,7 @@ static struct option const options[] = {
 	{ "quiet", 0, NULL, 'q' },
 	{ "retries", 1, NULL, 'r' },
 	{ "retry-pause", 1, NULL, 'R' },
+	{ "randomize", 2, NULL, 1025 },
 	{ "randomize-mt", 2, NULL, 1024 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
@@ -2379,7 +2446,9 @@ static void *miner_thread(void *userdata)
 			const uint32_t thread_end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
 			*nonceptr = start_nonce;
 			if (opt_randomize) {
-				*nonceptr = system_random_nonce(start_nonce, thread_end_nonce);
+				*nonceptr = opt_randomize_mt ?
+					mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce) :
+					system_random_nonce(start_nonce, thread_end_nonce);
 				end_nonce = (uint32_t)((uint64_t)*nonceptr + (opt_randomize_span ? (uint64_t)opt_randomize_span : (uint64_t)thr_hashrates[thr_id]));
 			}
 			nonce_initialized = true;
@@ -3616,7 +3685,8 @@ void parse_arg(int key, char *arg)
 		if (p) d *= 1e9;
 		opt_max_rate = d;
 		break;
-	case 1024: {
+	case 1024:
+	case 1025: {
 		const char *span_arg = arg;
 		char *endp = NULL;
 		unsigned long span = 0;
@@ -3630,6 +3700,7 @@ void parse_arg(int key, char *arg)
 			opt_randomize_span = (uint32_t)span;
 		}
 		opt_randomize = true;
+		opt_randomize_mt = (key == 1024);
 		break;
 	}
 	case 'V':
@@ -3694,7 +3765,7 @@ static void parse_cmdline(int argc, char *argv[])
 			break;
 
 		parse_arg(key, optarg);
-		if ((key == 1064 || key == 1024) && optind < argc && argv[optind][0] != '-' &&
+		if ((key == 1064 || key == 1024 || key == 1025) && optind < argc && argv[optind][0] != '-' &&
 		    argv[optind][0] >= '0' && argv[optind][0] <= '9') {
 			parse_arg(key, argv[optind]);
 			optind++;
