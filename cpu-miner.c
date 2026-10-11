@@ -540,7 +540,7 @@ Options:\n\
                           long polling is unavailable, in seconds (default: 5)\n\
       --randomize [N]      Randomize scan start using system entropy; optional N sets range width\n\
       --randomize-mt [N] Randomize scan start using Mersenne Twister; optional N sets range width\n\
-       --e2max N          Maximum per-thread extranonce2 value in randomize mode\n\\
+       --e2max N          Maximum per-thread extranonce2 value in randomize mode\n\
   -f, --diff-factor     Divide req. difficulty by this factor (std is 1.0)\n\
   -m, --diff-multiplier Multiply difficulty by this factor (std is 1.0)\n\
   -n, --nfactor         neoscrypt N-Factor\n\
