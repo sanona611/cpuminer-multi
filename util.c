@@ -1364,10 +1364,13 @@ static uint32_t vroll_mt[624];
 static int vroll_mt_index = 624;
 
 /* Randomize mode keeps an independent rolled version and timer per thread. */
-static uint32_t vroll_thread_version[MAX_CPUS];
-static time_t vroll_thread_last[MAX_CPUS];
-static int vroll_thread_block[MAX_CPUS];
-static bool vroll_thread_initialized[MAX_CPUS];
+/* --vroll N thread state must also support high -t values such as -t 64.
+ * MAX_CPUS is only 16 in this fork and is too small for these per-thread slots. */
+#define MAX_VROLL_THREADS 256
+static uint32_t vroll_thread_version[MAX_VROLL_THREADS];
+static time_t vroll_thread_last[MAX_VROLL_THREADS];
+static int vroll_thread_block[MAX_VROLL_THREADS];
+static bool vroll_thread_initialized[MAX_VROLL_THREADS];
 
 static void vroll_mt_seed(uint32_t seed)
 {
@@ -1420,7 +1423,7 @@ bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *w
 	bool change = false;
 
 	if (!opt_randomize || !opt_vroll || opt_vroll_interval <= 0 ||
-	    !sctx->version_rolling || !work || thr_id < 0 || thr_id >= MAX_CPUS)
+	    !sctx->version_rolling || !work || thr_id < 0 || thr_id >= MAX_VROLL_THREADS)
 		return false;
 
 	base = le32dec(sctx->job.version);
