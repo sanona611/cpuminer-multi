@@ -377,6 +377,7 @@ int opt_maxlograte = 5;
 bool opt_randomize = false;
 static bool opt_randomize_mt = false;
 static uint32_t opt_randomize_span = 0;
+static uint64_t opt_nonce_range = 0;
 static bool opt_e2max_set = false;
 static uint64_t opt_e2max = 0;
 static int opt_retries = -1;
@@ -541,6 +542,7 @@ Options:\n\
                           long polling is unavailable, in seconds (default: 5)\n\
       --randomize [N]      Randomize scan start using system entropy; optional N sets range width\n\
       --randomize-mt [N] Randomize scan start using Mersenne Twister; optional N sets range width\n\
+      --nonce-range N   Limit the nonce space per thread (only affects --randomize)\n\
        --e2max N          Set the required per-thread extranonce2 maximum in randomize mode;\n\
                           each thread cycles independently from 0 through N, then wraps to 0\n\
                           (N is required; only affects --randomize)\n\
@@ -635,6 +637,7 @@ static struct option const options[] = {
 	{ "retry-pause", 1, NULL, 'R' },
 	{ "randomize", 2, NULL, 1025 },
 	{ "randomize-mt", 2, NULL, 1024 },
+	{ "nonce-range", 1, NULL, 1068 },
 	{ "e2max", 1, NULL, 1066 },
 	{ "scantime", 1, NULL, 's' },
 	{ "show-diff", 0, NULL, 1013 },
@@ -2297,6 +2300,45 @@ static bool wanna_mine(int thr_id)
 	return state;
 }
 
+static void setup_random_nonce_chunk(int thr_id, uint32_t *nonceptr,
+	uint32_t *end_nonce, uint32_t *random_chunk_start,
+	bool *chunk_reaches_range_end)
+{
+	const bool limited_range = opt_randomize && opt_nonce_range > 0;
+	const uint32_t start_nonce = limited_range
+		? (uint32_t)((opt_nonce_range / (uint64_t)opt_n_threads) * (uint64_t)thr_id)
+		: 0xffffffffU / opt_n_threads * thr_id;
+	const uint32_t thread_end_nonce = limited_range
+		? (uint32_t)((opt_nonce_range / (uint64_t)opt_n_threads) * (uint64_t)(thr_id + 1) - 0x20)
+		: 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+	uint32_t random_end_nonce = thread_end_nonce;
+	uint64_t requested_end;
+	uint64_t span;
+
+	/* In limited-range mode, end_nonce is an exclusive scan boundary. */
+	if (limited_range && random_end_nonce > start_nonce)
+		random_end_nonce--;
+
+	*nonceptr = opt_randomize_mt
+		? mt19937_random_nonce(thr_id, start_nonce, random_end_nonce)
+		: system_random_nonce(start_nonce, random_end_nonce);
+	*random_chunk_start = *nonceptr;
+	span = opt_randomize_span ? (uint64_t)opt_randomize_span
+		: (uint64_t)thr_hashrates[thr_id];
+	requested_end = (uint64_t)*nonceptr + span;
+
+	if (limited_range) {
+		*chunk_reaches_range_end = requested_end >= thread_end_nonce;
+		if (requested_end > thread_end_nonce)
+			requested_end = thread_end_nonce;
+		*end_nonce = (uint32_t)requested_end;
+	} else {
+		*chunk_reaches_range_end = false;
+		/* Preserve the original behavior when --nonce-range is not active. */
+		*end_nonce = (uint32_t)requested_end;
+	}
+}
+
 static void *miner_thread(void *userdata)
 {
 	struct thr_info *mythr = (struct thr_info *) userdata;
@@ -2304,6 +2346,7 @@ static void *miner_thread(void *userdata)
 	struct work work;
 	uint32_t max_nonce;
 	uint32_t end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+	bool random_chunk_reaches_range_end = false;
 	bool nonce_initialized = false;
 	uint32_t random_chunk_start = 0;
 	time_t tm_rate_log = 0;
@@ -2449,7 +2492,7 @@ static void *miner_thread(void *userdata)
 			    work.job_id && g_work.job_id &&
 			    strcmp(work.job_id, g_work.job_id) == 0) {
 				if (opt_nonce_static_vroll && opt_vroll && nonce_exhausted_now &&
-				    !static_vroll_release) {
+				    !static_vroll_release && !random_chunk_reaches_range_end) {
 					/*
 					 * Advance this thread's extranonce2 using the normal Stratum
 					 * path (including --e2max), but keep its nonce chunk fixed
@@ -2497,14 +2540,8 @@ static void *miner_thread(void *userdata)
 			if (static_vroll_hold_chunk) {
 				*nonceptr = random_chunk_start;
 			} else {
-				const uint32_t start_nonce = 0xffffffffU / opt_n_threads * thr_id;
-				const uint32_t thread_end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
-				*nonceptr = opt_randomize_mt ?
-					mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce) :
-					system_random_nonce(start_nonce, thread_end_nonce);
-				random_chunk_start = *nonceptr;
-				end_nonce = (uint32_t)((uint64_t)*nonceptr +
-					(opt_randomize_span ? (uint64_t)opt_randomize_span : (uint64_t)thr_hashrates[thr_id]));
+				setup_random_nonce_chunk(thr_id, nonceptr, &end_nonce,
+					&random_chunk_start, &random_chunk_reaches_range_end);
 			}
 			nonce_initialized = true;
 		}
@@ -2558,15 +2595,10 @@ static void *miner_thread(void *userdata)
 			work_copy(&work, &g_work);
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
 			const uint32_t start_nonce = 0xffffffffU / opt_n_threads * thr_id;
-			const uint32_t thread_end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
 			*nonceptr = start_nonce;
-			if (opt_randomize) {
-				*nonceptr = opt_randomize_mt ?
-					mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce) :
-					system_random_nonce(start_nonce, thread_end_nonce);
-				random_chunk_start = *nonceptr;
-				end_nonce = (uint32_t)((uint64_t)*nonceptr + (opt_randomize_span ? (uint64_t)opt_randomize_span : (uint64_t)thr_hashrates[thr_id]));
-			}
+			if (opt_randomize)
+				setup_random_nonce_chunk(thr_id, nonceptr, &end_nonce,
+					&random_chunk_start, &random_chunk_reaches_range_end);
 			nonce_initialized = true;
 			}
 
@@ -3733,6 +3765,18 @@ void parse_arg(int key, char *arg)
 	case 1067:
 		opt_nonce_static_vroll = true;
 		break;
+	case 1068: { /* --nonce-range */
+		char *endp = NULL;
+		unsigned long long value;
+		errno = 0;
+		value = strtoull(arg, &endp, 10);
+		if (errno || endp == arg || *endp != '\0' || value == 0 || value > UINT32_MAX) {
+			fprintf(stderr, "invalid --nonce-range value: %s\n", arg ? arg : "(missing)");
+			show_usage_and_exit(1);
+		}
+		opt_nonce_range = (uint64_t)value;
+		break;
+	}
 	case 1064:
 		opt_vroll = true;
 		opt_vroll_interval = 0;
@@ -4023,6 +4067,12 @@ int main(int argc, char *argv[]) {
 		opt_n_threads = num_cpus;
 	if (!opt_n_threads)
 		opt_n_threads = 1;
+
+	if (opt_randomize && opt_nonce_range &&
+	    opt_nonce_range / (uint64_t)opt_n_threads <= 0x20) {
+		fprintf(stderr, "--nonce-range must provide more than 32 nonce values per thread when used with --randomize\n");
+		show_usage_and_exit(1);
+	}
 
 	if (opt_algo == ALGO_QUARK) {
 		init_quarkhash_contexts();
