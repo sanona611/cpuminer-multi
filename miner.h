@@ -475,6 +475,7 @@ bool stratum_authorize(struct stratum_ctx *sctx, const char *user, const char *p
 bool stratum_configure_version_rolling(struct stratum_ctx *sctx);
 bool stratum_vroll_due(struct stratum_ctx *sctx);
 bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *work, int thr_id);
+bool stratum_vroll_force_update_thread_locked(struct stratum_ctx *sctx, struct work *work, int thr_id);
 bool stratum_vroll_update(struct stratum_ctx *sctx, struct work *work);
 bool stratum_vroll_update_locked(struct stratum_ctx *sctx, struct work *work);
 bool stratum_vroll_force_update_locked(struct stratum_ctx *sctx, struct work *work);
