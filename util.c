@@ -1368,6 +1368,8 @@ static int vroll_mt_index = 624;
  * MAX_CPUS is only 16 in this fork and is too small for these per-thread slots. */
 #define MAX_VROLL_THREADS 10000
 static uint32_t vroll_thread_version[MAX_VROLL_THREADS];
+static uint64_t vroll_thread_counter[MAX_VROLL_THREADS];
+static uint32_t vroll_thread_mask[MAX_VROLL_THREADS];
 static time_t vroll_thread_last[MAX_VROLL_THREADS];
 static int vroll_thread_block[MAX_VROLL_THREADS];
 static bool vroll_thread_initialized[MAX_VROLL_THREADS];
@@ -1413,44 +1415,81 @@ bool stratum_vroll_due(struct stratum_ctx *sctx)
 }
 
 /*
- * In randomize mode with --vroll N, each thread selects its own version
- * and holds it for N seconds. Caller holds the Stratum work lock.
+ * Convert a compressed counter into the corresponding subset of the negotiated
+ * mask. Counter zero means no version bits are changed: the original job
+ * version is retained, so a base version of 1 remains version 1 (not version 0).
+ */
+static uint32_t vroll_counter_bits(uint64_t counter, uint32_t mask)
+{
+	uint32_t bits = 0;
+	unsigned int bit, index = 0;
+
+	for (bit = 0; bit < 32; bit++) {
+		uint32_t flag = (uint32_t)1U << bit;
+		if (mask & flag) {
+			if (counter & ((uint64_t)1 << index))
+				bits |= flag;
+			index++;
+		}
+	}
+	return bits;
+}
+
+/*
+ * Per-thread deterministic version rolling. A timer expiry resets that
+ * thread's compressed counter to zero. Nonce exhaustion advances it. A new
+ * block or a changed negotiated mask also starts at counter zero.
+ * Caller holds the Stratum work lock.
  */
 static bool stratum_vroll_update_thread_locked_ex(struct stratum_ctx *sctx, struct work *work, int thr_id, bool force)
 {
 	uint32_t base, internal_mask, bits;
 	time_t now;
 	bool change = false;
+	bool initialized, new_block, new_mask, timer_due;
 
-	if (!opt_vroll ||
-	    !sctx->version_rolling || !work || thr_id < 0 || thr_id >= MAX_VROLL_THREADS)
+	if (!opt_vroll || !sctx->version_rolling || !work ||
+	    thr_id < 0 || thr_id >= MAX_VROLL_THREADS)
 		return false;
 
 	base = le32dec(sctx->job.version);
 	internal_mask = swab32(sctx->version_mask);
 	now = time(NULL);
+	initialized = vroll_thread_initialized[thr_id];
+	new_block = !initialized || vroll_thread_block[thr_id] != sctx->bloc_height;
+	new_mask = !initialized || vroll_thread_mask[thr_id] != sctx->version_mask;
+	timer_due = initialized && opt_vroll_interval > 0 &&
+		now >= vroll_thread_last[thr_id] + opt_vroll_interval;
 
-	if (force ||
-	    !vroll_thread_initialized[thr_id] ||
-	    vroll_thread_block[thr_id] != sctx->bloc_height ||
-	    (vroll_thread_version[thr_id] & ~internal_mask) != (base & ~internal_mask) ||
-	    (opt_vroll_interval > 0 && now >= vroll_thread_last[thr_id] + opt_vroll_interval)) {
-		do {
-			bits = vroll_mt_rand() & sctx->version_mask;
-		} while (!bits && sctx->version_mask);
-		vroll_thread_version[thr_id] = (base & ~internal_mask) |
-			(swab32(bits) & internal_mask);
+	if (new_block || new_mask ||
+	    (vroll_thread_version[thr_id] & ~internal_mask) != (base & ~internal_mask)) {
+		vroll_thread_counter[thr_id] = 0;
 		vroll_thread_last[thr_id] = now;
 		vroll_thread_block[thr_id] = sctx->bloc_height;
+		vroll_thread_mask[thr_id] = sctx->version_mask;
 		vroll_thread_initialized[thr_id] = true;
 		change = true;
-		if (opt_debug)
-			applog(LOG_DEBUG, "Stratum rolled version=%08x bits=%08x mask=%08x thr=%d (timed)",
-				vroll_thread_version[thr_id], bits, sctx->version_mask, thr_id);
+	} else if (timer_due) {
+		/* The timer explicitly restarts the sequence at its first valid entry. */
+		vroll_thread_counter[thr_id] = 0;
+		vroll_thread_last[thr_id] = now;
+		change = true;
+	} else if (force) {
+		/* Do not restart the timer just because a nonce range was exhausted. */
+		vroll_thread_counter[thr_id]++;
+		change = true;
 	}
 
+	bits = vroll_counter_bits(vroll_thread_counter[thr_id], internal_mask);
+	vroll_thread_version[thr_id] = (base & ~internal_mask) | (bits & internal_mask);
 	work->version_bits = swab32(vroll_thread_version[thr_id] & internal_mask);
 	work->data[0] = vroll_thread_version[thr_id];
+
+	if (change && opt_debug)
+		applog(LOG_DEBUG, "Stratum rolled version=%08x bits=%08x mask=%08x counter=%llu thr=%d%s",
+			vroll_thread_version[thr_id], bits, sctx->version_mask,
+			(unsigned long long)vroll_thread_counter[thr_id], thr_id,
+			timer_due ? " (timer reset)" : (force ? " (nonce exhausted)" : " (reset)"));
 	return change;
 }
 
