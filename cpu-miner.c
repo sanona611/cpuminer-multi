@@ -360,6 +360,7 @@ bool opt_shareinfo = false;
 bool opt_nonce_continue = false;
 bool opt_vroll = false;
 int opt_vroll_interval = 0;
+bool opt_nonce_static_vroll = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool have_gbt = true;
@@ -560,6 +561,8 @@ Options:\n\
   -D, --debug           enable debug output\n\
       --shareinfo       show accepted share thread/nonce/E1/E2/time/version info\n\
       --vroll[=N]       enable version rolling; optional N sets interval in seconds\n\
+       --nonce-static-vroll hold each random nonce chunk while cycling allowed versions\n\
+\n\
       --nonce-continue  preserve each thread nonce cursor across Stratum jobs\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n\
       --hide-diff       Hide submitted block and net difficulty\n"
@@ -608,6 +611,7 @@ static struct option const options[] = {
 	{ "shareinfo", 0, NULL, 1063 },
 	{ "nonce-continue", 0, NULL, 1065 },
 	{ "vroll", 2, NULL, 1064 },
+	{ "nonce-static-vroll", 0, NULL, 1067 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
 	{ "diff-multiplier", 1, NULL, 'm' },
@@ -2301,6 +2305,7 @@ static void *miner_thread(void *userdata)
 	uint32_t max_nonce;
 	uint32_t end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
 	bool nonce_initialized = false;
+	uint32_t random_chunk_start = 0;
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2385,6 +2390,8 @@ static void *miner_thread(void *userdata)
 		int64_t max64;
 		bool regen_work = false;
 		bool thread_work_regenerated = false;
+		bool static_vroll_release = false;
+		bool static_vroll_hold_chunk = false;
 		int wkcmp_offset = 0;
 		int nonce_oft = 19*sizeof(uint32_t); // 76
 		int wkcmp_sz = nonce_oft;
@@ -2424,6 +2431,8 @@ static void *miner_thread(void *userdata)
 
 			pthread_mutex_lock(&g_work_lock);
 
+			static_vroll_release = opt_nonce_static_vroll && opt_randomize && opt_vroll &&
+				stratum_vroll_static_release_locked(&stratum, thr_id, nonce_exhausted_now);
 			bool vroll_nonce_exhausted = nonce_exhausted_now && !opt_randomize;
 			if (opt_vroll && stratum.version_rolling &&
 			    false &&
@@ -2436,10 +2445,17 @@ static void *miner_thread(void *userdata)
 			}
 
 			// to clean: is g_work loaded before the memcmp ?
-			if (opt_randomize && nonce_exhausted_now &&
+			if (opt_randomize && (nonce_exhausted_now || static_vroll_release) &&
 			    work.job_id && g_work.job_id &&
 			    strcmp(work.job_id, g_work.job_id) == 0) {
-				stratum_gen_work(&stratum, &work, true);
+				if (opt_nonce_static_vroll && opt_vroll && nonce_exhausted_now &&
+				    !static_vroll_release) {
+					/* Re-scan this exact nonce chunk with the next version. */
+					static_vroll_hold_chunk = true;
+				} else {
+					/* Timer, completed version cycle, or new block: release this chunk. */
+					stratum_gen_work(&stratum, &work, true);
+				}
 				thread_work_regenerated = true;
 			} else {
 				regen_work = regen_work || ( nonce_exhausted_now
@@ -2473,13 +2489,18 @@ static void *miner_thread(void *userdata)
 		}
 		if (thread_work_regenerated) {
 			nonceptr = (uint32_t*) (((char*)work.data) + nonce_oft);
-			const uint32_t start_nonce = 0xffffffffU / opt_n_threads * thr_id;
-			const uint32_t thread_end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
-			*nonceptr = opt_randomize_mt ?
-				mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce) :
-				system_random_nonce(start_nonce, thread_end_nonce);
-			end_nonce = (uint32_t)((uint64_t)*nonceptr +
-				(opt_randomize_span ? (uint64_t)opt_randomize_span : (uint64_t)thr_hashrates[thr_id]));
+			if (static_vroll_hold_chunk) {
+				*nonceptr = random_chunk_start;
+			} else {
+				const uint32_t start_nonce = 0xffffffffU / opt_n_threads * thr_id;
+				const uint32_t thread_end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
+				*nonceptr = opt_randomize_mt ?
+					mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce) :
+					system_random_nonce(start_nonce, thread_end_nonce);
+				random_chunk_start = *nonceptr;
+				end_nonce = (uint32_t)((uint64_t)*nonceptr +
+					(opt_randomize_span ? (uint64_t)opt_randomize_span : (uint64_t)thr_hashrates[thr_id]));
+			}
 			nonce_initialized = true;
 		}
 		else if (opt_randomize && work.job_id && g_work.job_id &&
@@ -2538,6 +2559,7 @@ static void *miner_thread(void *userdata)
 				*nonceptr = opt_randomize_mt ?
 					mt19937_random_nonce(thr_id, start_nonce, thread_end_nonce) :
 					system_random_nonce(start_nonce, thread_end_nonce);
+				random_chunk_start = *nonceptr;
 				end_nonce = (uint32_t)((uint64_t)*nonceptr + (opt_randomize_span ? (uint64_t)opt_randomize_span : (uint64_t)thr_hashrates[thr_id]));
 			}
 			nonce_initialized = true;
@@ -2548,12 +2570,9 @@ static void *miner_thread(void *userdata)
 			nonce_initialized = true;
 		}
 		if (have_stratum && opt_vroll) {
-			/*
-			 * Exhaustion advances this thread's version counter. If the
-			 * --vroll N timer expires on the same iteration, the timer reset
-			 * takes precedence inside the updater and happens only once.
-			 */
-			if (nonce_exhausted_now)
+			if (opt_nonce_static_vroll && opt_randomize && static_vroll_release)
+				stratum_vroll_reset_thread_locked(&stratum, &work, thr_id);
+			else if (nonce_exhausted_now)
 				stratum_vroll_force_update_thread_locked(&stratum, &work, thr_id);
 			else
 				stratum_vroll_update_thread_locked(&stratum, &work, thr_id);
@@ -3705,6 +3724,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1065:
 		opt_nonce_continue = true;
+		break;
+	case 1067:
+		opt_nonce_static_vroll = true;
 		break;
 	case 1064:
 		opt_vroll = true;
