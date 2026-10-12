@@ -1416,7 +1416,7 @@ bool stratum_vroll_due(struct stratum_ctx *sctx)
  * In randomize mode with --vroll N, each thread selects its own version
  * and holds it for N seconds. Caller holds the Stratum work lock.
  */
-bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *work, int thr_id)
+static bool stratum_vroll_update_thread_locked_ex(struct stratum_ctx *sctx, struct work *work, int thr_id, bool force)
 {
 	uint32_t base, internal_mask, bits;
 	time_t now;
@@ -1430,7 +1430,8 @@ bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *w
 	internal_mask = swab32(sctx->version_mask);
 	now = time(NULL);
 
-	if (!vroll_thread_initialized[thr_id] ||
+	if (force ||
+	    !vroll_thread_initialized[thr_id] ||
 	    vroll_thread_block[thr_id] != sctx->bloc_height ||
 	    (vroll_thread_version[thr_id] & ~internal_mask) != (base & ~internal_mask) ||
 	    (opt_vroll_interval > 0 && now >= vroll_thread_last[thr_id] + opt_vroll_interval)) {
@@ -1451,6 +1452,16 @@ bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *w
 	work->version_bits = swab32(vroll_thread_version[thr_id] & internal_mask);
 	work->data[0] = vroll_thread_version[thr_id];
 	return change;
+}
+
+bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *work, int thr_id)
+{
+	return stratum_vroll_update_thread_locked_ex(sctx, work, thr_id, false);
+}
+
+bool stratum_vroll_force_update_thread_locked(struct stratum_ctx *sctx, struct work *work, int thr_id)
+{
+	return stratum_vroll_update_thread_locked_ex(sctx, work, thr_id, true);
 }
 
 static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work *work, bool force)
