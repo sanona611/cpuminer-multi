@@ -2548,7 +2548,12 @@ static void *miner_thread(void *userdata)
 			nonce_initialized = true;
 		}
 		if (have_stratum && opt_vroll) {
-			if (opt_randomize && nonce_exhausted_now)
+			/*
+			 * Exhaustion advances this thread's version counter. If the
+			 * --vroll N timer expires on the same iteration, the timer reset
+			 * takes precedence inside the updater and happens only once.
+			 */
+			if (nonce_exhausted_now)
 				stratum_vroll_force_update_thread_locked(&stratum, &work, thr_id);
 			else
 				stratum_vroll_update_thread_locked(&stratum, &work, thr_id);
