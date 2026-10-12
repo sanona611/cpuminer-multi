@@ -47,6 +47,7 @@
 extern pthread_mutex_t stats_lock;
 extern bool opt_vroll;
 extern int opt_vroll_interval;
+extern bool opt_nonce_static_vroll;
 
 struct data_buffer {
 	void		*buf;
@@ -1373,6 +1374,7 @@ static uint32_t vroll_thread_mask[MAX_VROLL_THREADS];
 static time_t vroll_thread_last[MAX_VROLL_THREADS];
 static int vroll_thread_block[MAX_VROLL_THREADS];
 static bool vroll_thread_initialized[MAX_VROLL_THREADS];
+static bool vroll_thread_cycle_reset_pending[MAX_VROLL_THREADS];
 
 static void vroll_mt_seed(uint32_t seed)
 {
@@ -1468,11 +1470,13 @@ static bool stratum_vroll_update_thread_locked_ex(struct stratum_ctx *sctx, stru
 		vroll_thread_block[thr_id] = sctx->bloc_height;
 		vroll_thread_mask[thr_id] = sctx->version_mask;
 		vroll_thread_initialized[thr_id] = true;
+		vroll_thread_cycle_reset_pending[thr_id] = false;
 		change = true;
-	} else if (timer_due) {
-		/* The timer explicitly restarts the sequence at its first valid entry. */
+	} else if (timer_due || vroll_thread_cycle_reset_pending[thr_id]) {
+		/* Timer and static-chunk release both restart the version sequence. */
 		vroll_thread_counter[thr_id] = 0;
 		vroll_thread_last[thr_id] = now;
+		vroll_thread_cycle_reset_pending[thr_id] = false;
 		change = true;
 	} else if (force) {
 		/* Do not restart the timer just because a nonce range was exhausted. */
@@ -1501,6 +1505,56 @@ bool stratum_vroll_update_thread_locked(struct stratum_ctx *sctx, struct work *w
 bool stratum_vroll_force_update_thread_locked(struct stratum_ctx *sctx, struct work *work, int thr_id)
 {
 	return stratum_vroll_update_thread_locked_ex(sctx, work, thr_id, true);
+}
+
+bool stratum_vroll_reset_thread_locked(struct stratum_ctx *sctx, struct work *work, int thr_id)
+{
+	if (thr_id < 0 || thr_id >= MAX_VROLL_THREADS)
+		return false;
+	vroll_thread_cycle_reset_pending[thr_id] = true;
+	return stratum_vroll_update_thread_locked_ex(sctx, work, thr_id, false);
+}
+
+static unsigned int vroll_mask_bits(uint32_t mask)
+{
+	unsigned int count = 0;
+	while (mask) {
+		count += mask & 1U;
+		mask >>= 1;
+	}
+	return count;
+}
+
+/* Caller holds the Stratum work lock. True means this thread must release its
+ * current random nonce chunk and begin a fresh version cycle. */
+bool stratum_vroll_static_release_locked(struct stratum_ctx *sctx, int thr_id, bool nonce_exhausted)
+{
+	uint32_t mask;
+	uint64_t combinations;
+	time_t now;
+	bool initialized;
+
+	if (!opt_nonce_static_vroll || !opt_randomize || !opt_vroll ||
+	    !sctx || !sctx->version_rolling || thr_id < 0 || thr_id >= MAX_VROLL_THREADS)
+		return false;
+
+	initialized = vroll_thread_initialized[thr_id];
+	if (!initialized)
+		return false;
+	mask = swab32(sctx->version_mask);
+	now = time(NULL);
+	if (vroll_thread_block[thr_id] != sctx->bloc_height ||
+	    vroll_thread_mask[thr_id] != sctx->version_mask ||
+	    (vroll_thread_version[thr_id] & ~mask) != (le32dec(sctx->job.version) & ~mask))
+		return true;
+	if (opt_vroll_interval > 0 && now >= vroll_thread_last[thr_id] + opt_vroll_interval)
+		return true;
+	if (!nonce_exhausted)
+		return false;
+	combinations = (uint64_t)1 << vroll_mask_bits(mask);
+	if (vroll_thread_counter[thr_id] + 1 >= combinations)
+		return true;
+	return false;
 }
 
 static bool stratum_vroll_update_locked_ex(struct stratum_ctx *sctx, struct work *work, bool force)
