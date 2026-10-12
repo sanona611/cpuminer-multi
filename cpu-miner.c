@@ -2547,8 +2547,12 @@ static void *miner_thread(void *userdata)
 			++(*nonceptr);
 			nonce_initialized = true;
 		}
-		if (have_stratum && opt_vroll)
-			stratum_vroll_update_thread_locked(&stratum, &work, thr_id);
+		if (have_stratum && opt_vroll) {
+			if (opt_randomize && nonce_exhausted_now)
+				stratum_vroll_force_update_thread_locked(&stratum, &work, thr_id);
+			else
+				stratum_vroll_update_thread_locked(&stratum, &work, thr_id);
+		}
 		pthread_mutex_unlock(&g_work_lock);
 		work_restart[thr_id].restart = 0;
 
