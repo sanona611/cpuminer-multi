@@ -2450,7 +2450,12 @@ static void *miner_thread(void *userdata)
 			    strcmp(work.job_id, g_work.job_id) == 0) {
 				if (opt_nonce_static_vroll && opt_vroll && nonce_exhausted_now &&
 				    !static_vroll_release) {
-					/* Re-scan this exact nonce chunk with the next version. */
+					/*
+					 * Advance this thread's extranonce2 using the normal Stratum
+					 * path (including --e2max), but keep its nonce chunk fixed
+					 * while the next allowed version is scanned.
+					 */
+					stratum_gen_work(&stratum, &work, true);
 					static_vroll_hold_chunk = true;
 				} else {
 					/* Timer, completed version cycle, or new block: release this chunk. */
