@@ -1352,7 +1352,7 @@ static int share_result(int result, struct work *work, const char *reason)
 				shareinfo->thr_id, shareinfo->nonce,
 				(uint64_t)strtoull(e1_le, NULL, 16),
 				(uint64_t)strtoull(e2_le, NULL, 16),
-				shareinfo->ntime, shareinfo->version);
+				swab32(shareinfo->ntime), shareinfo->version);
 		} else {
 			snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 				" <thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
