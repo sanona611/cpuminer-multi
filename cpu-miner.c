@@ -3830,13 +3830,13 @@ void parse_arg(int key, char *arg)
 		}
 		break;
 	case 1013:
-	case 1070:
-		opt_timeroll = true;
-		break;
 		opt_showdiff = true;
 		break;
 	case 1014:
 		opt_showdiff = false;
+		break;
+	case 1070:
+		opt_timeroll = true;
 		break;
 	case 1016:			/* --coinbase-addr */
 		pk_script_size = address_to_script(pk_script, sizeof(pk_script), arg);
