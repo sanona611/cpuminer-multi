@@ -2339,16 +2339,15 @@ static void setup_random_nonce_chunk(int thr_id, uint32_t *nonceptr,
 		: (uint64_t)thr_hashrates[thr_id];
 	requested_end = (uint64_t)*nonceptr + span;
 
-	if (limited_range) {
-		*chunk_reaches_range_end = requested_end >= thread_end_nonce;
-		if (requested_end > thread_end_nonce)
-			requested_end = thread_end_nonce;
-		*end_nonce = (uint32_t)requested_end;
-	} else {
-		*chunk_reaches_range_end = false;
-		/* Preserve the original behavior when --nonce-range is not active. */
-		*end_nonce = (uint32_t)requested_end;
-	}
+	/*
+	 * end_nonce is the exclusive boundary for this thread's nonce range.
+	 * Clamp in both limited and default modes so a random chunk near the
+	 * boundary cannot wrap uint32_t and appear exhausted immediately.
+	 */
+	*chunk_reaches_range_end = requested_end >= thread_end_nonce;
+	if (requested_end > thread_end_nonce)
+		requested_end = thread_end_nonce;
+	*end_nonce = (uint32_t)requested_end;
 }
 
 static void *miner_thread(void *userdata)
