@@ -1349,10 +1349,10 @@ static int share_result(int result, struct work *work, const char *reason)
 		if (opt_shareinfo_decimal) {
 			snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 				" <thr=%d nonce=%u E1=%" PRIu64 " E2=%" PRIu64 " time=%u ver=%u>",
-				shareinfo->thr_id, swab32(shareinfo->nonce),
+				shareinfo->thr_id, shareinfo->nonce,
 				(uint64_t)strtoull(e1_le, NULL, 16),
 				(uint64_t)strtoull(e2_le, NULL, 16),
-				swab32(shareinfo->ntime), swab32(shareinfo->version));
+				shareinfo->ntime, shareinfo->version);
 		} else {
 			snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 				" <thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
