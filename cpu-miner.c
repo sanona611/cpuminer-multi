@@ -1345,19 +1345,18 @@ static int share_result(int result, struct work *work, const char *reason)
 		snprintf(e1_le, sizeof(e1_le), "%s", shareinfo->e1);
 		snprintf(e2_le, sizeof(e2_le), "%s", shareinfo->e2);
 		shareinfo_reverse_hex_bytes(e1_le);
-		shareinfo_reverse_hex_bytes(e2_le);
 		if (opt_shareinfo_decimal) {
 			snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 				" <thr=%d nonce=%u E1=%" PRIu64 " E2=%" PRIu64 " time=%u ver=%u>",
 				shareinfo->thr_id, shareinfo->nonce,
 				(uint64_t)strtoull(e1_le, NULL, 16),
 				(uint64_t)strtoull(e2_le, NULL, 16),
-				swab32(shareinfo->ntime), swab32(shareinfo->version));
+				shareinfo->ntime, swab32(shareinfo->version));
 		} else {
 			snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 				" <thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
-				shareinfo->thr_id, swab32(shareinfo->nonce), e1_le, e2_le,
-				swab32(shareinfo->ntime), swab32(shareinfo->version));
+				shareinfo->thr_id, swab32(shareinfo->nonce), e1_le, shareinfo->e2,
+				shareinfo->ntime, swab32(shareinfo->version));
 		}
 	}
 
