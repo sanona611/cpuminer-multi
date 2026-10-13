@@ -357,6 +357,7 @@ bool opt_redirect = true;
 bool opt_showdiff = true;
 bool opt_extranonce = true;
 bool opt_shareinfo = false;
+static bool opt_shareinfo_decimal = false;
 bool opt_nonce_continue = false;
 bool opt_vroll = false;
 int opt_vroll_interval = 0;
@@ -561,7 +562,8 @@ Options:\n\
   -q, --quiet           disable per-thread hashmeter output\n\
       --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
-      --shareinfo       show accepted share thread/nonce/E1/E2/time/version info\n\
+      --shareinfo       show accepted share thread/nonce/E1/E2/time/version info in hex\n\
+      --shareinfo-decimal show accepted share info with numeric fields in decimal\n\
       --vroll[=N]       enable version rolling; optional N sets interval in seconds\n\
        --nonce-static-vroll hold each random nonce chunk while cycling allowed versions\n\
 \n\
@@ -611,6 +613,7 @@ static struct option const options[] = {
 	{ "no-color", 0, NULL, 1002 },
 	{ "debug", 0, NULL, 'D' },
 	{ "shareinfo", 0, NULL, 1063 },
+	{ "shareinfo-decimal", 0, NULL, 1069 },
 	{ "nonce-continue", 0, NULL, 1065 },
 	{ "vroll", 2, NULL, 1064 },
 	{ "nonce-static-vroll", 0, NULL, 1067 },
@@ -1276,7 +1279,7 @@ static void shareinfo_push(const struct work *work)
 {
 	struct shareinfo_entry *entry;
 
-	if (!opt_shareinfo || !have_stratum || !work)
+	if ((!opt_shareinfo && !opt_shareinfo_decimal) || !have_stratum || !work)
 		return;
 
 	entry = (struct shareinfo_entry *) calloc(1, sizeof(*entry));
@@ -1333,20 +1336,29 @@ static int share_result(int result, struct work *work, const char *reason)
 	double sharediff = work ? work->sharediff : stratum.sharediff;
 	int i;
 
-	if (opt_shareinfo && have_stratum && !work)
+	if ((opt_shareinfo || opt_shareinfo_decimal) && have_stratum && !work)
 		shareinfo = shareinfo_pop();
 
-	if (opt_shareinfo && shareinfo) {
+	if ((opt_shareinfo || opt_shareinfo_decimal) && shareinfo) {
 		char e1_le[sizeof(shareinfo->e1)];
 		char e2_le[sizeof(shareinfo->e2)];
 		snprintf(e1_le, sizeof(e1_le), "%s", shareinfo->e1);
 		snprintf(e2_le, sizeof(e2_le), "%s", shareinfo->e2);
 		shareinfo_reverse_hex_bytes(e1_le);
 		shareinfo_reverse_hex_bytes(e2_le);
-		snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
-			" <thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
-			shareinfo->thr_id, swab32(shareinfo->nonce), e1_le, e2_le,
-			swab32(shareinfo->ntime), swab32(shareinfo->version));
+		if (opt_shareinfo_decimal) {
+			snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
+				" <thr=%d nonce=%u E1=%" PRIu64 " E2=%" PRIu64 " time=%u ver=%u>",
+				shareinfo->thr_id, swab32(shareinfo->nonce),
+				(uint64_t)strtoull(e1_le, NULL, 16),
+				(uint64_t)strtoull(e2_le, NULL, 16),
+				swab32(shareinfo->ntime), swab32(shareinfo->version));
+		} else {
+			snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
+				" <thr=%d nonce=%08x E1=%s E2=%s time=%08x ver=%08x>",
+				shareinfo->thr_id, swab32(shareinfo->nonce), e1_le, e2_le,
+				swab32(shareinfo->ntime), swab32(shareinfo->version));
+		}
 	}
 
 	hashrate = 0.;
@@ -3758,6 +3770,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1063:
 		opt_shareinfo = true;
+		break;
+	case 1069:
+		opt_shareinfo_decimal = true;
 		break;
 	case 1065:
 		opt_nonce_continue = true;
