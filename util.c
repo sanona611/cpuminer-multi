@@ -1438,9 +1438,9 @@ static uint32_t vroll_counter_bits(uint64_t counter, uint32_t mask)
 }
 
 /*
- * Per-thread deterministic version rolling. A timer expiry resets that
- * thread's compressed counter to zero. Nonce exhaustion advances it. A new
- * block or a changed negotiated mask also starts at counter zero.
+ * Per-thread deterministic version rolling. A timer expiry advances the
+ * compressed counter once; nonce exhaustion advances it when no timer is set.
+ * A static-chunk release, new block, or changed mask restarts at counter zero.
  * Caller holds the Stratum work lock.
  */
 static bool stratum_vroll_update_thread_locked_ex(struct stratum_ctx *sctx, struct work *work, int thr_id, bool force)
