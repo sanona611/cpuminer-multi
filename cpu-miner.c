@@ -566,7 +566,7 @@ Options:\n\
       --shareinfo       show accepted share thread/nonce/E1/E2/time/version info in hex\n\
       --shareinfo-decimal show accepted share info with numeric fields in decimal\n\
       --vroll[=N]       enable version rolling; optional N sets interval in seconds\n\
-      --timeroll        roll SHA-256d nTime through a 3600-second per-thread window\\n\\
+      --timeroll        roll SHA-256d nTime through a 3600-second per-thread window\n\
        --nonce-static-vroll hold each random nonce chunk while cycling allowed versions\n\
 \n\
       --nonce-continue  preserve each thread nonce cursor across Stratum jobs\n\
@@ -2625,7 +2625,6 @@ static void *miner_thread(void *userdata)
 			++(*nonceptr);
 			nonce_initialized = true;
 		}
-		if (have_stratum && opt_vroll) {
 		if (opt_timeroll && have_stratum && opt_algo == ALGO_SHA256D &&
 		    work.job_id && work.job_id[0]) {
 			/* Keep nTime private to this thread; g_work retains the pool value. */
@@ -2645,6 +2644,7 @@ static void *miner_thread(void *userdata)
 			}
 			work.data[17] = timeroll_start + timeroll_offset;
 		}
+		if (have_stratum && opt_vroll) {
 			if (opt_nonce_static_vroll && opt_randomize && static_vroll_release)
 				stratum_vroll_reset_thread_locked(&stratum, &work, thr_id);
 			else if (nonce_exhausted_now &&
