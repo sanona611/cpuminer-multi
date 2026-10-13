@@ -1472,14 +1472,19 @@ static bool stratum_vroll_update_thread_locked_ex(struct stratum_ctx *sctx, stru
 		vroll_thread_initialized[thr_id] = true;
 		vroll_thread_cycle_reset_pending[thr_id] = false;
 		change = true;
-	} else if (timer_due || vroll_thread_cycle_reset_pending[thr_id]) {
-		/* Timer and static-chunk release both restart the version sequence. */
+	} else if (vroll_thread_cycle_reset_pending[thr_id]) {
+		/* A static-chunk release restarts this thread at the first version. */
 		vroll_thread_counter[thr_id] = 0;
 		vroll_thread_last[thr_id] = now;
 		vroll_thread_cycle_reset_pending[thr_id] = false;
 		change = true;
+	} else if (timer_due) {
+		/* Hold each version for the configured interval, then advance once. */
+		vroll_thread_counter[thr_id]++;
+		vroll_thread_last[thr_id] = now;
+		change = true;
 	} else if (force) {
-		/* Do not restart the timer just because a nonce range was exhausted. */
+		/* Without a timer, advance when this thread exhausts its nonce range. */
 		vroll_thread_counter[thr_id]++;
 		change = true;
 	}
