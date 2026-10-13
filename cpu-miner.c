@@ -362,6 +362,7 @@ bool opt_nonce_continue = false;
 bool opt_vroll = false;
 int opt_vroll_interval = 0;
 bool opt_nonce_static_vroll = false;
+bool opt_timeroll = false;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool have_gbt = true;
@@ -565,6 +566,7 @@ Options:\n\
       --shareinfo       show accepted share thread/nonce/E1/E2/time/version info in hex\n\
       --shareinfo-decimal show accepted share info with numeric fields in decimal\n\
       --vroll[=N]       enable version rolling; optional N sets interval in seconds\n\
+      --timeroll        roll SHA-256d nTime through a 3600-second per-thread window\\n\\
        --nonce-static-vroll hold each random nonce chunk while cycling allowed versions\n\
 \n\
       --nonce-continue  preserve each thread nonce cursor across Stratum jobs\n\
@@ -616,6 +618,7 @@ static struct option const options[] = {
 	{ "shareinfo-decimal", 0, NULL, 1069 },
 	{ "nonce-continue", 0, NULL, 1065 },
 	{ "vroll", 2, NULL, 1064 },
+	{ "timeroll", 0, NULL, 1070 },
 	{ "nonce-static-vroll", 0, NULL, 1067 },
 	{ "diff-factor", 1, NULL, 'f' },
 	{ "diff", 1, NULL, 'f' }, // deprecated (alias)
@@ -2360,6 +2363,11 @@ static void *miner_thread(void *userdata)
 	bool random_chunk_reaches_range_end = false;
 	bool nonce_initialized = false;
 	uint32_t random_chunk_start = 0;
+	uint32_t timeroll_start = 0;
+	uint32_t timeroll_pool_ntime = 0;
+	uint32_t timeroll_offset = 0;
+	bool timeroll_initialized = false;
+	char *timeroll_job_id = NULL;
 	time_t tm_rate_log = 0;
 	time_t firstwork_time = 0;
 	unsigned char *scratchbuf = NULL;
@@ -2618,6 +2626,25 @@ static void *miner_thread(void *userdata)
 			nonce_initialized = true;
 		}
 		if (have_stratum && opt_vroll) {
+		if (opt_timeroll && have_stratum && opt_algo == ALGO_SHA256D &&
+		    work.job_id && work.job_id[0]) {
+			/* Keep nTime private to this thread; g_work retains the pool value. */
+			bool new_timeroll_job = !timeroll_initialized || !timeroll_job_id ||
+				strcmp(timeroll_job_id, work.job_id) != 0 ||
+				g_work.data[17] != timeroll_pool_ntime;
+			if (new_timeroll_job) {
+				free(timeroll_job_id);
+				timeroll_job_id = strdup(work.job_id);
+				timeroll_start = g_work.data[17];
+				timeroll_pool_ntime = g_work.data[17];
+				timeroll_offset = 0;
+				timeroll_initialized = true;
+			} else if (nonce_exhausted_now) {
+				/* Cycle through [pool nTime, pool nTime + 3600], then wrap. */
+				timeroll_offset = timeroll_offset >= 3600 ? 0 : timeroll_offset + 1;
+			}
+			work.data[17] = timeroll_start + timeroll_offset;
+		}
 			if (opt_nonce_static_vroll && opt_randomize && static_vroll_release)
 				stratum_vroll_reset_thread_locked(&stratum, &work, thr_id);
 			else if (nonce_exhausted_now &&
@@ -3802,6 +3829,9 @@ void parse_arg(int key, char *arg)
 		}
 		break;
 	case 1013:
+	case 1070:
+		opt_timeroll = true;
+		break;
 		opt_showdiff = true;
 		break;
 	case 1014:
