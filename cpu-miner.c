@@ -3089,6 +3089,7 @@ static void *miner_thread(void *userdata)
 	}
 
 out:
+	free(timeroll_job_id);
 	tq_freeze(mythr->q);
 
 	return NULL;
