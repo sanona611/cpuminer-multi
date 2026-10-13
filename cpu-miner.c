@@ -2621,7 +2621,8 @@ static void *miner_thread(void *userdata)
 		if (have_stratum && opt_vroll) {
 			if (opt_nonce_static_vroll && opt_randomize && static_vroll_release)
 				stratum_vroll_reset_thread_locked(&stratum, &work, thr_id);
-			else if (nonce_exhausted_now && !opt_randomize)
+			else if (nonce_exhausted_now &&
+				 (!opt_randomize || opt_vroll_interval <= 0 || opt_nonce_static_vroll))
 				stratum_vroll_force_update_thread_locked(&stratum, &work, thr_id);
 			else
 				stratum_vroll_update_thread_locked(&stratum, &work, thr_id);
