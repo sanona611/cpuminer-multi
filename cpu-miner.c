@@ -1345,6 +1345,7 @@ static int share_result(int result, struct work *work, const char *reason)
 		snprintf(e1_le, sizeof(e1_le), "%s", shareinfo->e1);
 		snprintf(e2_le, sizeof(e2_le), "%s", shareinfo->e2);
 		shareinfo_reverse_hex_bytes(e1_le);
+		shareinfo_reverse_hex_bytes(e2_le);
 		if (opt_shareinfo_decimal) {
 			snprintf(shareinfo_suffix, sizeof(shareinfo_suffix),
 				" <thr=%d nonce=%u E1=%" PRIu64 " E2=%" PRIu64 " time=%u ver=%u>",
