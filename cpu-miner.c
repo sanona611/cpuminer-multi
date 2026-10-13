@@ -2642,7 +2642,7 @@ static void *miner_thread(void *userdata)
 				/* Cycle through [pool nTime, pool nTime + 3600], then wrap. */
 				timeroll_offset = timeroll_offset >= 3600 ? 0 : timeroll_offset + 1;
 			}
-			work.data[17] = timeroll_start + timeroll_offset;
+			work.data[17] = swab32(swab32(timeroll_start) + timeroll_offset);
 		}
 		if (have_stratum && opt_vroll) {
 			if (opt_nonce_static_vroll && opt_randomize && static_vroll_release)
